@@ -1,0 +1,13 @@
+# ninja log v7
+20	1716	7762425607799814	CMakeFiles/photo_triage_cpp.dir/src/imageloader.cpp.obj	2821dc7af80f04ce
+12	2252	7762425607714669	CMakeFiles/photo_triage_cpp.dir/src/main.cpp.obj	85c19371e0c86f13
+16	2811	7762425607764686	CMakeFiles/photo_triage_cpp.dir/src/phototriagewindow.cpp.obj	b2ad4fabab09c161
+17	924	7762427191156630	photo_triage_cpp_autogen/timestamp	407f169ff6e98ac6
+17	924	7762427191156630	photo_triage_cpp_autogen/mocs_compilation.cpp	407f169ff6e98ac6
+17	924	7762427191156630	C:/Documents/Coding/phototriage_cpp/build/Desktop_Qt_6_9_1_MSVC2022_64bit-Debug/photo_triage_cpp_autogen/timestamp	407f169ff6e98ac6
+17	924	7762427191156630	C:/Documents/Coding/phototriage_cpp/build/Desktop_Qt_6_9_1_MSVC2022_64bit-Debug/photo_triage_cpp_autogen/mocs_compilation.cpp	407f169ff6e98ac6
+938	2675	7762427191892773	CMakeFiles/photo_triage_cpp.dir/src/imageloader.cpp.obj	f01adf862c00c4d
+931	3199	7762427191822580	CMakeFiles/photo_triage_cpp.dir/src/main.cpp.obj	74ebc57dcc66c271
+928	3502	7762427191782586	CMakeFiles/photo_triage_cpp.dir/photo_triage_cpp_autogen/mocs_compilation.cpp.obj	1df085db605613f6
+934	3777	7762427191857664	CMakeFiles/photo_triage_cpp.dir/src/phototriagewindow.cpp.obj	d0d05cc7a9b49e82
+3778	4091	7762427220290758	photo_triage_cpp.exe	dddab8f6d0a3a136
