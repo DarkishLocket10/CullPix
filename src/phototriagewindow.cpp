@@ -7,7 +7,8 @@
 
 #include "phototriagewindow.h"
 #include "imageloader.h"
-
+#include <algorithm>
+#include <QThread>
 #include <QLabel>
 #include <QPushButton>
 #include <QStatusBar>
@@ -214,7 +215,7 @@ void PhotoTriageWindow::loadSourceDirectory(const QString &directory)
     m_statusBar->clearMessage();
 
     displayCurrentImage();
-    preloadNext();
+    preloadAhead();
 }
 
 void PhotoTriageWindow::displayCurrentImage()
@@ -245,33 +246,41 @@ void PhotoTriageWindow::displayCurrentImage()
     m_statusBar->showMessage(tr("%1/%2 – %3").arg(m_currentIndex + 1).arg(m_images.size()).arg(fi.fileName()));
 }
 
-void PhotoTriageWindow::preloadNext()
+void PhotoTriageWindow::preloadAhead()
 {
-    int nextIndex = m_currentIndex + 1;
-    if (nextIndex < 0 || nextIndex >= static_cast<int>(m_images.size())) {
-        return;
+    // unload anything that is now behind the current image
+    for (auto it = m_preloaded.begin(); it != m_preloaded.end(); ) {
+        if (it.key() <= m_currentIndex)      // keep current or newer only
+            it = m_preloaded.erase(it);
+        else
+            ++it;
     }
-    if (m_preloaded.contains(nextIndex)) {
-        return;
+
+    // Start loaders for a window of PRELOAD_DEPTH images ahead
+    for (int i = m_currentIndex + 1;
+         i <= m_currentIndex + PRELOAD_DEPTH && i < m_images.size();
+         ++i)
+    {
+        if (m_preloaded.contains(i) || m_loading.contains(i))
+            continue;                       // already ready or in progress
+
+        const QFileInfo &fi = m_images.at(i);
+        ImageLoader *loader = new ImageLoader(i, fi.filePath(), this);
+        connect(loader, &ImageLoader::loaded,
+                this,     &PhotoTriageWindow::onImagePreloaded,
+                Qt::QueuedConnection);
+        connect(loader, &QThread::finished,
+                loader,  &QObject::deleteLater); // clean up automatically
+        m_loading.insert(i);
+        loader->start();
     }
-    // If an existing loader is running, stop it before starting a new one
-    if (m_loader && m_loader->isRunning()) {
-        m_loader->requestInterruption();
-        m_loader->quit();
-        m_loader->wait();
-        delete m_loader;
-        m_loader = nullptr;
-    }
-    const QFileInfo &fi = m_images.at(nextIndex);
-    m_loader = new ImageLoader(nextIndex, fi.filePath(), this);
-    connect(m_loader, &ImageLoader::loaded, this, &PhotoTriageWindow::onImagePreloaded);
-    m_loader->start();
 }
+
 
 void PhotoTriageWindow::onImagePreloaded(int index, const QImage &image)
 {
-    // Store preloaded image in cache
     m_preloaded.insert(index, image);
+    m_loading.remove(index);
 }
 
 void PhotoTriageWindow::performMove(const QString &action)
@@ -328,7 +337,7 @@ void PhotoTriageWindow::performMove(const QString &action)
     // Clear preloaded cache because ordering has changed
     m_preloaded.clear();
     displayCurrentImage();
-    preloadNext();
+    preloadAhead();
 }
 
 void PhotoTriageWindow::handleMoveKeep()
@@ -372,5 +381,5 @@ void PhotoTriageWindow::undoLastAction()
     m_currentIndex = insertIndex;
     m_preloaded.clear();
     displayCurrentImage();
-    preloadNext();
+    preloadAhead();
 }

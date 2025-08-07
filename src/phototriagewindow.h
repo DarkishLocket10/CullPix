@@ -10,6 +10,7 @@
 #include <QImage>
 #include <QHash>
 #include <QFileInfo>
+#include <QSet>
 #include <vector>
 #include <deque>
 
@@ -45,9 +46,10 @@ private slots:
     void onImagePreloaded(int index, const QImage &image);
 
 private:
+    void preloadAhead();
     void loadSourceDirectory(const QString &directory);
     void displayCurrentImage();
-    void preloadNext();
+    // void preloadNext();
     void performMove(const QString &action);
     static bool naturalLess(const QFileInfo &a, const QFileInfo &b);
 
@@ -55,8 +57,12 @@ private:
     std::vector<QFileInfo> m_images;
     int m_currentIndex = -1;
     QHash<int, QImage> m_preloaded;
+
+    QSet<int> m_loading;
+
     std::deque<MoveAction> m_undoStack;
     static constexpr int MAX_UNDO = 20;
+    static constexpr int PRELOAD_DEPTH = 3;
 
     // Directories
     QString m_sourceDir;
