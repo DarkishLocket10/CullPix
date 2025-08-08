@@ -27,8 +27,8 @@ void ImageLoader::run()
         // Provide a placeholder image to indicate failure
         QImage placeholder(100, 100, QImage::Format_RGB32);
         placeholder.fill(QColor("lightgray"));
-        emit loaded(m_index, placeholder);
+        emit loaded(m_index, m_path, placeholder);
     } else {
-        emit loaded(m_index, image);
+        emit loaded(m_index, m_path, image);
     }
 }

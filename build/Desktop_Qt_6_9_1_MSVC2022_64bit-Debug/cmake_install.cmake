@@ -1,4 +1,4 @@
-# Install script for directory: C:/Documents/Coding/phototriage_cpp
+# Install script for directory: C:/Documents/Coding/async2/phototriage_cpp
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -47,6 +47,6 @@ endif()
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
-  file(WRITE "C:/Documents/Coding/phototriage_cpp/build/Desktop_Qt_6_9_1_MSVC2022_64bit-Debug/${CMAKE_INSTALL_MANIFEST}"
+  file(WRITE "C:/Documents/Coding/async2/phototriage_cpp/build/Desktop_Qt_6_9_1_MSVC2022_64bit-Debug/${CMAKE_INSTALL_MANIFEST}"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")
 endif()

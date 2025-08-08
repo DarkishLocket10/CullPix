@@ -21,8 +21,10 @@ public:
 
 signals:
     // Emitted when the image has been loaded.  The index identifies
-    // which entry in the image list this corresponds to.
-    void loaded(int index, const QImage &image);
+    // which entry in the image list this corresponds to, and the
+    // associated file path is provided to allow keying the cache by
+    // path instead of index.
+    void loaded(int index, const QString &path, const QImage &image);
 
 protected:
     // QThread::run() executes in the worker thread.

@@ -1,19 +1,19 @@
 {
 	"AUTOGEN_COMMAND_LINE_LENGTH_MAX" : 32000,
-	"BUILD_DIR" : "C:/Documents/Coding/phototriage_cpp/build/Desktop_Qt_6_9_1_MSVC2022_64bit-Debug/photo_triage_cpp_autogen",
-	"CMAKE_BINARY_DIR" : "C:/Documents/Coding/phototriage_cpp/build/Desktop_Qt_6_9_1_MSVC2022_64bit-Debug",
-	"CMAKE_CURRENT_BINARY_DIR" : "C:/Documents/Coding/phototriage_cpp/build/Desktop_Qt_6_9_1_MSVC2022_64bit-Debug",
-	"CMAKE_CURRENT_SOURCE_DIR" : "C:/Documents/Coding/phototriage_cpp",
+	"BUILD_DIR" : "C:/Documents/Coding/async2/phototriage_cpp/build/Desktop_Qt_6_9_1_MSVC2022_64bit-Debug/photo_triage_cpp_autogen",
+	"CMAKE_BINARY_DIR" : "C:/Documents/Coding/async2/phototriage_cpp/build/Desktop_Qt_6_9_1_MSVC2022_64bit-Debug",
+	"CMAKE_CURRENT_BINARY_DIR" : "C:/Documents/Coding/async2/phototriage_cpp/build/Desktop_Qt_6_9_1_MSVC2022_64bit-Debug",
+	"CMAKE_CURRENT_SOURCE_DIR" : "C:/Documents/Coding/async2/phototriage_cpp",
 	"CMAKE_EXECUTABLE" : "C:/Qt/Tools/CMake_64/bin/cmake.exe",
 	"CMAKE_LIST_FILES" : 
 	[
-		"C:/Documents/Coding/phototriage_cpp/CMakeLists.txt",
-		"C:/Documents/Coding/phototriage_cpp/build/Desktop_Qt_6_9_1_MSVC2022_64bit-Debug/.qtc/package-manager/auto-setup.cmake",
-		"C:/Documents/Coding/phototriage_cpp/build/Desktop_Qt_6_9_1_MSVC2022_64bit-Debug/CMakeFiles/3.30.5/CMakeSystem.cmake",
-		"C:/Documents/Coding/phototriage_cpp/build/Desktop_Qt_6_9_1_MSVC2022_64bit-Debug/.qtc/package-manager/maintenance_tool_provider.cmake",
+		"C:/Documents/Coding/async2/phototriage_cpp/CMakeLists.txt",
+		"C:/Documents/Coding/async2/phototriage_cpp/build/Desktop_Qt_6_9_1_MSVC2022_64bit-Debug/.qtc/package-manager/auto-setup.cmake",
+		"C:/Documents/Coding/async2/phototriage_cpp/build/Desktop_Qt_6_9_1_MSVC2022_64bit-Debug/CMakeFiles/3.30.5/CMakeSystem.cmake",
+		"C:/Documents/Coding/async2/phototriage_cpp/build/Desktop_Qt_6_9_1_MSVC2022_64bit-Debug/.qtc/package-manager/maintenance_tool_provider.cmake",
 		"C:/Qt/Tools/CMake_64/share/cmake-3.30/Modules/CMakeSystemSpecificInitialize.cmake",
 		"C:/Qt/Tools/CMake_64/share/cmake-3.30/Modules/Platform/Windows-Initialize.cmake",
-		"C:/Documents/Coding/phototriage_cpp/build/Desktop_Qt_6_9_1_MSVC2022_64bit-Debug/CMakeFiles/3.30.5/CMakeCXXCompiler.cmake",
+		"C:/Documents/Coding/async2/phototriage_cpp/build/Desktop_Qt_6_9_1_MSVC2022_64bit-Debug/CMakeFiles/3.30.5/CMakeCXXCompiler.cmake",
 		"C:/Qt/Tools/CMake_64/share/cmake-3.30/Modules/CMakeSystemSpecificInformation.cmake",
 		"C:/Qt/Tools/CMake_64/share/cmake-3.30/Modules/CMakeGenericSystem.cmake",
 		"C:/Qt/Tools/CMake_64/share/cmake-3.30/Modules/CMakeInitializeConfigs.cmake",
@@ -26,7 +26,7 @@
 		"C:/Qt/Tools/CMake_64/share/cmake-3.30/Modules/Compiler/CMakeCommonCompilerMacros.cmake",
 		"C:/Qt/Tools/CMake_64/share/cmake-3.30/Modules/Platform/Windows-MSVC-CXX.cmake",
 		"C:/Qt/Tools/CMake_64/share/cmake-3.30/Modules/Platform/Windows-MSVC.cmake",
-		"C:/Documents/Coding/phototriage_cpp/build/Desktop_Qt_6_9_1_MSVC2022_64bit-Debug/CMakeFiles/3.30.5/CMakeRCCompiler.cmake",
+		"C:/Documents/Coding/async2/phototriage_cpp/build/Desktop_Qt_6_9_1_MSVC2022_64bit-Debug/CMakeFiles/3.30.5/CMakeRCCompiler.cmake",
 		"C:/Qt/Tools/CMake_64/share/cmake-3.30/Modules/CMakeRCInformation.cmake",
 		"C:/Qt/Tools/CMake_64/share/cmake-3.30/Modules/CMakeCommonLanguageInclude.cmake",
 		"C:/Qt/6.9.1/msvc2022_64/lib/cmake/Qt6Widgets/Qt6WidgetsConfigVersion.cmake",
@@ -350,30 +350,42 @@
 		"C:/Qt/6.9.1/msvc2022_64/lib/cmake/Qt6/QtPublicWalkLibsHelpers.cmake",
 		"C:/Qt/6.9.1/msvc2022_64/lib/cmake/Qt6/QtPublicWindowsHelpers.cmake",
 		"C:/Qt/Tools/CMake_64/share/cmake-3.30/Modules/CMakeFindDependencyMacro.cmake",
-		"C:/Qt/6.9.1/msvc2022_64/lib/cmake/Qt6/Qt6Dependencies.cmake"
+		"C:/Qt/6.9.1/msvc2022_64/lib/cmake/Qt6/Qt6Dependencies.cmake",
+		"C:/Qt/Tools/CMake_64/share/cmake-3.30/Modules/FindThreads.cmake",
+		"C:/Qt/Tools/CMake_64/share/cmake-3.30/Modules/CheckLibraryExists.cmake",
+		"C:/Qt/Tools/CMake_64/share/cmake-3.30/Modules/CheckIncludeFileCXX.cmake",
+		"C:/Qt/Tools/CMake_64/share/cmake-3.30/Modules/CheckCXXSourceCompiles.cmake",
+		"C:/Qt/Tools/CMake_64/share/cmake-3.30/Modules/FindPackageHandleStandardArgs.cmake",
+		"C:/Qt/Tools/CMake_64/share/cmake-3.30/Modules/FindPackageMessage.cmake"
 	],
-	"CMAKE_SOURCE_DIR" : "C:/Documents/Coding/phototriage_cpp",
+	"CMAKE_SOURCE_DIR" : "C:/Documents/Coding/async2/phototriage_cpp",
 	"CROSS_CONFIG" : false,
-	"DEP_FILE" : "C:/Documents/Coding/phototriage_cpp/build/Desktop_Qt_6_9_1_MSVC2022_64bit-Debug/photo_triage_cpp_autogen/deps",
+	"DEP_FILE" : "C:/Documents/Coding/async2/phototriage_cpp/build/Desktop_Qt_6_9_1_MSVC2022_64bit-Debug/photo_triage_cpp_autogen/deps",
 	"DEP_FILE_RULE_NAME" : "photo_triage_cpp_autogen/timestamp",
 	"HEADERS" : 
 	[
 		[
-			"C:/Documents/Coding/phototriage_cpp/src/imageloader.h",
+			"C:/Documents/Coding/async2/phototriage_cpp/src/fileworker.h",
+			"MU",
+			"UVLADIE3JM/moc_fileworker.cpp",
+			null
+		],
+		[
+			"C:/Documents/Coding/async2/phototriage_cpp/src/imageloader.h",
 			"MU",
 			"UVLADIE3JM/moc_imageloader.cpp",
 			null
 		],
 		[
-			"C:/Documents/Coding/phototriage_cpp/src/phototriagewindow.h",
+			"C:/Documents/Coding/async2/phototriage_cpp/src/phototriagewindow.h",
 			"MU",
 			"UVLADIE3JM/moc_phototriagewindow.cpp",
 			null
 		]
 	],
 	"HEADER_EXTENSIONS" : [ "h", "hh", "h++", "hm", "hpp", "hxx", "in", "txx" ],
-	"INCLUDE_DIR" : "C:/Documents/Coding/phototriage_cpp/build/Desktop_Qt_6_9_1_MSVC2022_64bit-Debug/photo_triage_cpp_autogen/include",
-	"MOC_COMPILATION_FILE" : "C:/Documents/Coding/phototriage_cpp/build/Desktop_Qt_6_9_1_MSVC2022_64bit-Debug/photo_triage_cpp_autogen/mocs_compilation.cpp",
+	"INCLUDE_DIR" : "C:/Documents/Coding/async2/phototriage_cpp/build/Desktop_Qt_6_9_1_MSVC2022_64bit-Debug/photo_triage_cpp_autogen/include",
+	"MOC_COMPILATION_FILE" : "C:/Documents/Coding/async2/phototriage_cpp/build/Desktop_Qt_6_9_1_MSVC2022_64bit-Debug/photo_triage_cpp_autogen/mocs_compilation.cpp",
 	"MOC_DEFINITIONS" : 
 	[
 		"QT_CORE_LIB",
@@ -418,18 +430,27 @@
 	"MOC_SKIP" : [],
 	"MULTI_CONFIG" : false,
 	"PARALLEL" : 16,
-	"PARSE_CACHE_FILE" : "C:/Documents/Coding/phototriage_cpp/build/Desktop_Qt_6_9_1_MSVC2022_64bit-Debug/CMakeFiles/photo_triage_cpp_autogen.dir/ParseCache.txt",
+	"PARSE_CACHE_FILE" : "C:/Documents/Coding/async2/phototriage_cpp/build/Desktop_Qt_6_9_1_MSVC2022_64bit-Debug/CMakeFiles/photo_triage_cpp_autogen.dir/ParseCache.txt",
 	"QT_MOC_EXECUTABLE" : "C:/Qt/6.9.1/msvc2022_64/bin/moc.exe",
 	"QT_UIC_EXECUTABLE" : "C:/Qt/6.9.1/msvc2022_64/bin/uic.exe",
 	"QT_VERSION_MAJOR" : 6,
 	"QT_VERSION_MINOR" : 9,
-	"SETTINGS_FILE" : "C:/Documents/Coding/phototriage_cpp/build/Desktop_Qt_6_9_1_MSVC2022_64bit-Debug/CMakeFiles/photo_triage_cpp_autogen.dir/AutogenUsed.txt",
+	"SETTINGS_FILE" : "C:/Documents/Coding/async2/phototriage_cpp/build/Desktop_Qt_6_9_1_MSVC2022_64bit-Debug/CMakeFiles/photo_triage_cpp_autogen.dir/AutogenUsed.txt",
 	"SOURCES" : 
 	[
-		[ "C:/Documents/Coding/phototriage_cpp/src/imageloader.cpp", "MU", null ],
-		[ "C:/Documents/Coding/phototriage_cpp/src/main.cpp", "MU", null ],
 		[
-			"C:/Documents/Coding/phototriage_cpp/src/phototriagewindow.cpp",
+			"C:/Documents/Coding/async2/phototriage_cpp/src/fileworker.cpp",
+			"MU",
+			null
+		],
+		[
+			"C:/Documents/Coding/async2/phototriage_cpp/src/imageloader.cpp",
+			"MU",
+			null
+		],
+		[ "C:/Documents/Coding/async2/phototriage_cpp/src/main.cpp", "MU", null ],
+		[
+			"C:/Documents/Coding/async2/phototriage_cpp/src/phototriagewindow.cpp",
 			"MU",
 			null
 		]
