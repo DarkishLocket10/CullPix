@@ -10,14 +10,18 @@
 #include <QImage>
 #include <QHash>
 #include <QFileInfo>
-#include <QSet>
 #include <vector>
 #include <deque>
+#include <QSet>
 
 class QLabel;
 class QPushButton;
 class QStatusBar;
 class ImageLoader;
+
+// Forward declarations for asynchronous file worker
+struct FileTask;
+class FileWorker;
 
 // Record of a move operation for undo purposes
 struct MoveAction
@@ -35,6 +39,7 @@ public:
     ~PhotoTriageWindow() override;
 
 protected:
+
     void resizeEvent(QResizeEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
 
@@ -43,26 +48,34 @@ private slots:
     void handleMoveKeep();
     void handleMoveReject();
     void undoLastAction();
-    void onImagePreloaded(int index, const QImage &image);
+    void onImagePreloaded(int index, const QString &path, const QImage &image);
 
 private:
-    void preloadAhead();
+    int indexFromPath(const QString &path) const;
+
     void loadSourceDirectory(const QString &directory);
     void displayCurrentImage();
-    // void preloadNext();
+    void ensurePreloadWindow();
+    void preloadNext();
     void performMove(const QString &action);
     static bool naturalLess(const QFileInfo &a, const QFileInfo &b);
 
     // Data
     std::vector<QFileInfo> m_images;
     int m_currentIndex = -1;
-    QHash<int, QImage> m_preloaded;
-
-    QSet<int> m_loading;
-
+    // Cache of preloaded images keyed by the absolute file path.  This
+    // allows the cache to remain valid even when indices shift after
+    // removing items.
+    QHash<QString, QImage> m_preloaded;
     std::deque<MoveAction> m_undoStack;
     static constexpr int MAX_UNDO = 20;
-    static constexpr int PRELOAD_DEPTH = 3;
+
+    // Preloading queue: indices of images currently loading ahead
+    QSet<int> m_loading;
+    static constexpr int PRELOAD_DEPTH = 10;
+
+    // Background worker for file operations
+    FileWorker *m_fileWorker = nullptr;
 
     // Directories
     QString m_sourceDir;

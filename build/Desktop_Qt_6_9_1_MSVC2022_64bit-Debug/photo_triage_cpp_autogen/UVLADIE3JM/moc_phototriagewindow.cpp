@@ -46,6 +46,7 @@ template <> constexpr inline auto PhotoTriageWindow::qt_create_metaobjectdata<qt
         "undoLastAction",
         "onImagePreloaded",
         "index",
+        "path",
         "image"
     };
 
@@ -59,8 +60,8 @@ template <> constexpr inline auto PhotoTriageWindow::qt_create_metaobjectdata<qt
         // Slot 'undoLastAction'
         QtMocHelpers::SlotData<void()>(5, 2, QMC::AccessPrivate, QMetaType::Void),
         // Slot 'onImagePreloaded'
-        QtMocHelpers::SlotData<void(int, const QImage &)>(6, 2, QMC::AccessPrivate, QMetaType::Void, {{
-            { QMetaType::Int, 7 }, { QMetaType::QImage, 8 },
+        QtMocHelpers::SlotData<void(int, const QString &, const QImage &)>(6, 2, QMC::AccessPrivate, QMetaType::Void, {{
+            { QMetaType::Int, 7 }, { QMetaType::QString, 8 }, { QMetaType::QImage, 9 },
         }}),
     };
     QtMocHelpers::UintData qt_properties {
@@ -89,7 +90,7 @@ void PhotoTriageWindow::qt_static_metacall(QObject *_o, QMetaObject::Call _c, in
         case 1: _t->handleMoveKeep(); break;
         case 2: _t->handleMoveReject(); break;
         case 3: _t->undoLastAction(); break;
-        case 4: _t->onImagePreloaded((*reinterpret_cast< std::add_pointer_t<int>>(_a[1])),(*reinterpret_cast< std::add_pointer_t<QImage>>(_a[2]))); break;
+        case 4: _t->onImagePreloaded((*reinterpret_cast< std::add_pointer_t<int>>(_a[1])),(*reinterpret_cast< std::add_pointer_t<QString>>(_a[2])),(*reinterpret_cast< std::add_pointer_t<QImage>>(_a[3]))); break;
         default: ;
         }
     }

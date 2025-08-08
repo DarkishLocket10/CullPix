@@ -42,13 +42,14 @@ template <> constexpr inline auto ImageLoader::qt_create_metaobjectdata<qt_meta_
         "loaded",
         "",
         "index",
+        "path",
         "image"
     };
 
     QtMocHelpers::UintData qt_methods {
         // Signal 'loaded'
-        QtMocHelpers::SignalData<void(int, const QImage &)>(1, 2, QMC::AccessPublic, QMetaType::Void, {{
-            { QMetaType::Int, 3 }, { QMetaType::QImage, 4 },
+        QtMocHelpers::SignalData<void(int, const QString &, const QImage &)>(1, 2, QMC::AccessPublic, QMetaType::Void, {{
+            { QMetaType::Int, 3 }, { QMetaType::QString, 4 }, { QMetaType::QImage, 5 },
         }}),
     };
     QtMocHelpers::UintData qt_properties {
@@ -73,12 +74,12 @@ void ImageLoader::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id,
     auto *_t = static_cast<ImageLoader *>(_o);
     if (_c == QMetaObject::InvokeMetaMethod) {
         switch (_id) {
-        case 0: _t->loaded((*reinterpret_cast< std::add_pointer_t<int>>(_a[1])),(*reinterpret_cast< std::add_pointer_t<QImage>>(_a[2]))); break;
+        case 0: _t->loaded((*reinterpret_cast< std::add_pointer_t<int>>(_a[1])),(*reinterpret_cast< std::add_pointer_t<QString>>(_a[2])),(*reinterpret_cast< std::add_pointer_t<QImage>>(_a[3]))); break;
         default: ;
         }
     }
     if (_c == QMetaObject::IndexOfMethod) {
-        if (QtMocHelpers::indexOfMethod<void (ImageLoader::*)(int , const QImage & )>(_a, &ImageLoader::loaded, 0))
+        if (QtMocHelpers::indexOfMethod<void (ImageLoader::*)(int , const QString & , const QImage & )>(_a, &ImageLoader::loaded, 0))
             return;
     }
 }
@@ -115,8 +116,8 @@ int ImageLoader::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
 }
 
 // SIGNAL 0
-void ImageLoader::loaded(int _t1, const QImage & _t2)
+void ImageLoader::loaded(int _t1, const QString & _t2, const QImage & _t3)
 {
-    QMetaObject::activate<void>(this, &staticMetaObject, 0, nullptr, _t1, _t2);
+    QMetaObject::activate<void>(this, &staticMetaObject, 0, nullptr, _t1, _t2, _t3);
 }
 QT_WARNING_POP
