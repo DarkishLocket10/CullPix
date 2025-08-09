@@ -1,14 +1,9 @@
-Photo‑Triage (C++ Port)
+Photo‑Triage
 =======================
 
-This directory contains a C++ implementation of a lightweight photo triage
-utility inspired by the original Python program.  The goal of this port is to
-retain the fast and responsive workflow of the original while taking
-advantage of C++'s performance characteristics and Qt's native widget
-toolkit.
+Photo Triage is a program for quickly triaging photos
 
-The current version focuses on the core **keep/reject** workflow.  Features
-such as star ratings and mobile front‑ends can be layered on later.
+The current version focuses on the core **keep/reject** workflow.
 
 ## Building the application
 
