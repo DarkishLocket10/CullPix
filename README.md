@@ -70,6 +70,8 @@ keep navigation snappy.
 * **Undo stack**: up to 20 move operations are retained.  Undoing an
   operation restores both the file and the browsing position.
 
-This codebase is intended as a starting point.  Additional features
-such as star ratings, bulk exporting, or a cross‑platform mobile UI can
-be implemented by extending the existing classes.
+## Known Issues
+
+* **Proper RAW photo support**: Currently RAW photos aren't working. That will be fixed.
+* **Improved loader**: The queue is not filling upon load, it fills when the first choice is made.
+* **Looks**: Will overhaul UI & add quality of life updates
