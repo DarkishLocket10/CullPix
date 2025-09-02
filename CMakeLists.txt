@@ -23,6 +23,8 @@ add_executable(photo_triage_cpp
     src/imageloader.h
     src/fileworker.cpp
     src/fileworker.h
+    src/rawloader.h
+    src/rawloader.cpp
 )
 
 target_link_libraries(photo_triage_cpp PRIVATE Qt6::Widgets)
