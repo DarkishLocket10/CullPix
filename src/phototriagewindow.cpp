@@ -14,6 +14,8 @@
 #include <QStatusBar>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
+#include <QSplitter>
+#include <QListWidget>
 #include <QFileDialog>
 #include <QShortcut>
 #include <QKeySequence>
@@ -27,42 +29,120 @@
 #include <QApplication>
 #include <QTimer>
 #include <QThread>
+#include <QIcon>
+#include <QPixmap>
+#include <QFileIconProvider>
 #include <cctype>
 
 PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     : QMainWindow(parent)
 {
     setWindowTitle(QStringLiteral("Photo‑Triage"));
-    resize(800, 600);
+    resize(1000, 700);
 
-    // Set up central image display
+    // Overall application styling.  Apply a modern dark theme with off‑white text
+    // and a muted accent palette.  Avoid pure black and pure white in accordance
+    // with accessibility recommendations for dark interfaces【555328609052638†L132-L141】.  The use
+    // of dark gray (#121212) for backgrounds and off‑white (#E0E0E0) for text
+    // reduces eye strain and improves readability【555328609052638†L132-L141】.  Accent
+    // colors are used sparingly on interactive elements to guide attention.
+    QString appStyle = R"(
+        QMainWindow {
+            background-color: #121212;
+            color: #E0E0E0;
+            font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+            font-size: 14px;
+        }
+        QStatusBar {
+            background-color: #1E1E1E;
+            color: #E0E0E0;
+            border-top: 1px solid #333;
+        }
+        QListWidget {
+            background-color: #1A1A1A; // someone come get lex luthor lol.
+            color: #CCCCCC;
+            border: none;
+        }
+        QListWidget::item {
+            padding: 8px;
+            margin: 0px;
+        }
+        QListWidget::item:selected {
+            background-color: #264653;
+            color: #FFFFFF;
+        }
+    )";
+    qApp->setStyleSheet(appStyle);
+
+    // Set up the side file browser and central image display.  Use a
+    // splitter so the user can adjust the space between the two panes.  The
+    // left pane shows a thumbnail list of images; the right pane displays
+    // the currently selected photo.  Splitting the UI like this follows
+    // minimalistic design principles by clearly separating navigation
+    // controls from content【780516724173997†L23-L44】.
+    m_fileListWidget = new QListWidget(this);
+    m_fileListWidget->setViewMode(QListView::ListMode);
+    m_fileListWidget->setIconSize(QSize(80, 80));
+    m_fileListWidget->setUniformItemSizes(false);
+    m_fileListWidget->setSelectionMode(QAbstractItemView::SingleSelection);
+    connect(m_fileListWidget, &QListWidget::currentRowChanged,
+            this, &PhotoTriageWindow::onFileListSelectionChanged);
+
     m_imageLabel = new QLabel(this);
     m_imageLabel->setAlignment(Qt::AlignCenter);
     m_imageLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    m_imageLabel->setStyleSheet("background-color: #111; color: #eee;");
-    setCentralWidget(m_imageLabel);
+    m_imageLabel->setStyleSheet("background-color: #111111; color: #E0E0E0;");
+
+    QSplitter *splitter = new QSplitter(this);
+    splitter->setOrientation(Qt::Horizontal);
+    splitter->addWidget(m_fileListWidget);
+    splitter->addWidget(m_imageLabel);
+    splitter->setStretchFactor(0, 0);
+    splitter->setStretchFactor(1, 1);
+    setCentralWidget(splitter);
 
     // Status bar
     m_statusBar = statusBar();
 
-    // Buttons
+    // Buttons with contemporary styling.  Each button uses a distinct accent
+    // color to convey its purpose.  A green tone is used for "Keep", a
+    // salmon/red tone for "Reject", and a soft orange for "Undo".
     m_keepButton = new QPushButton(tr("Keep (Z)"));
     m_rejectButton = new QPushButton(tr("Reject (X)"));
     m_undoButton = new QPushButton(tr("Undo (U)"));
+
+    m_keepButton->setStyleSheet("QPushButton { background-color: #2A9D8F; color: #FFFFFF; "
+                                 "border: none; border-radius: 6px; padding: 8px 16px; "
+                                 "font-weight: 600; } "
+                                 "QPushButton:hover { background-color: #21867A; } "
+                                 "QPushButton:pressed { background-color: #1E745F; }");
+    m_rejectButton->setStyleSheet("QPushButton { background-color: #E76F51; color: #FFFFFF; "
+                                 "border: none; border-radius: 6px; padding: 8px 16px; "
+                                 "font-weight: 600; } "
+                                 "QPushButton:hover { background-color: #CF6045; } "
+                                 "QPushButton:pressed { background-color: #B25037; }");
+    m_undoButton->setStyleSheet("QPushButton { background-color: #F4A261; color: #FFFFFF; "
+                                 "border: none; border-radius: 6px; padding: 8px 16px; "
+                                 "font-weight: 600; } "
+                                 "QPushButton:hover { background-color: #D68F54; } "
+                                 "QPushButton:pressed { background-color: #BB7A46; }");
 
     // Connect button clicks to handlers
     connect(m_keepButton, &QPushButton::clicked, this, &PhotoTriageWindow::handleMoveKeep);
     connect(m_rejectButton, &QPushButton::clicked, this, &PhotoTriageWindow::handleMoveReject);
     connect(m_undoButton, &QPushButton::clicked, this, &PhotoTriageWindow::undoLastAction);
 
-    // Tool bar layout
+    // Tool bar layout: wrap the buttons in a QWidget to align them neatly.  Use
+    // spacing and margins that provide breathing room without excess clutter
+    // (negative space is an essential element of minimalist design【780516724173997†L77-L88】).
     QWidget *toolbarWidget = new QWidget(this);
     QHBoxLayout *hbox = new QHBoxLayout(toolbarWidget);
-    hbox->setContentsMargins(5, 5, 5, 5);
-    hbox->setSpacing(10);
+    hbox->setContentsMargins(10, 8, 10, 8);
+    hbox->setSpacing(12);
     hbox->addWidget(m_keepButton);
     hbox->addWidget(m_rejectButton);
     hbox->addWidget(m_undoButton);
+    hbox->addStretch(1);
     toolbarWidget->setLayout(hbox);
     QToolBar *tb = new QToolBar(this);
     tb->setMovable(false);
@@ -75,6 +155,9 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     new QShortcut(QKeySequence(QStringLiteral("U")), this, SLOT(undoLastAction()));
     new QShortcut(QKeySequence(QStringLiteral("Ctrl+Z")), this, SLOT(undoLastAction()));
     new QShortcut(QKeySequence(QStringLiteral("O")), this, SLOT(chooseSourceFolder()));
+    // Arrow key shortcuts to browse images without performing any action
+    new QShortcut(QKeySequence(Qt::Key_Right), this, SLOT(goToNextImage()));
+    new QShortcut(QKeySequence(Qt::Key_Left), this, SLOT(goToPreviousImage()));
 
     // Ask for source folder on startup after event loop starts
     QTimer::singleShot(0, this, &PhotoTriageWindow::chooseSourceFolder);
@@ -225,6 +308,12 @@ void PhotoTriageWindow::loadSourceDirectory(const QString &directory)
     // navigates.  This call will schedule ImageLoader instances via
     // ensurePreloadWindow().
     ensurePreloadWindow();
+
+    // Populate the side list with the new set of images.  Building the list
+    // immediately after loading the directory ensures that the thumbnails are
+    // available before the user begins navigating.  Without this call the list
+    // would still show entries from a previous directory.
+    populateFileList();
 }
 
 void PhotoTriageWindow::displayCurrentImage()
@@ -233,14 +322,24 @@ void PhotoTriageWindow::displayCurrentImage()
         m_imageLabel->clear();
         m_imageLabel->setText(tr("No images."));
         m_statusBar->showMessage(QString());
+        // Clear selection in file list when there are no images
+        if (m_fileListWidget) {
+            m_fileListWidget->blockSignals(true);
+            m_fileListWidget->setCurrentRow(-1);
+            m_fileListWidget->blockSignals(false);
+        }
         return;
     }
     const QFileInfo &fi = m_images.at(m_currentIndex);
     QImage image;
     const QString key = fi.absoluteFilePath();
-    // Use preloaded image if available
+    // Use preloaded image if available.  Do not remove it from the cache
+    // here; the sliding window in ensurePreloadWindow() manages eviction.  If
+    // the image is not cached, load it synchronously.  Keeping cached
+    // images intact allows rapid back‑and‑forth navigation with minimal
+    // disk I/O.
     if (m_preloaded.contains(key)) {
-        image = m_preloaded.take(key);
+        image = m_preloaded.value(key);
     } else {
         image.load(fi.filePath());
     }
@@ -254,6 +353,15 @@ void PhotoTriageWindow::displayCurrentImage()
     }
     // Update status bar
     m_statusBar->showMessage(tr("%1/%2 – %3").arg(m_currentIndex + 1).arg(m_images.size()).arg(fi.fileName()));
+
+    // Highlight the current item in the side list.  Blocking signals prevents
+    // triggering onFileListSelectionChanged recursively.
+    if (m_fileListWidget) {
+        m_fileListWidget->blockSignals(true);
+        m_fileListWidget->setCurrentRow(m_currentIndex);
+        m_fileListWidget->scrollToItem(m_fileListWidget->currentItem(), QAbstractItemView::PositionAtCenter);
+        m_fileListWidget->blockSignals(false);
+    }
 }
 
 int PhotoTriageWindow::indexFromPath(const QString &path) const
@@ -268,24 +376,39 @@ int PhotoTriageWindow::indexFromPath(const QString &path) const
 
 void PhotoTriageWindow::ensurePreloadWindow()
 {
-    // Drop cache entries that are behind or equal to current
+    if (m_currentIndex < 0 || m_currentIndex >= static_cast<int>(m_images.size())) {
+        return;
+    }
+    // Maintain a sliding window of preloaded images around the current index.  The
+    // cache retains images within [currentIndex - PRELOAD_BACK_DEPTH, currentIndex + PRELOAD_DEPTH].
     for (auto it = m_preloaded.begin(); it != m_preloaded.end(); ) {
         const QString path = it.key();
-        if (QFileInfo(path) == m_images.at(m_currentIndex)) { ++it; continue; }
-        int idx = indexFromPath(path);          // trivial helper: map path→index
-        if (idx <= m_currentIndex) it = m_preloaded.erase(it);
-        else ++it;
+        int idx = indexFromPath(path);
+        // Keep images within the window; evict those too far behind or ahead
+        if (idx < m_currentIndex - PRELOAD_BACK_DEPTH || idx > m_currentIndex + PRELOAD_DEPTH) {
+            it = m_preloaded.erase(it);
+        } else {
+            ++it;
+        }
     }
-
-    // Fill up to PRELOAD_DEPTH ahead
-    for (int i = m_currentIndex + 1;
-         i <= m_currentIndex + PRELOAD_DEPTH && i < m_images.size();
-         ++i)
-    {
+    // Preload ahead within the forward window
+    for (int i = m_currentIndex + 1; i <= m_currentIndex + PRELOAD_DEPTH && i < m_images.size(); ++i) {
         const QString key = m_images.at(i).absoluteFilePath();
         if (m_preloaded.contains(key) || m_loading.contains(i)) continue;
-
-        // spin up a loader for this index
+        ImageLoader *ldr = new ImageLoader(i, key, this);
+        connect(ldr, &ImageLoader::loaded,
+                this,  &PhotoTriageWindow::onImagePreloaded,
+                Qt::QueuedConnection);
+        connect(ldr, &QThread::finished, ldr, &QObject::deleteLater);
+        m_loading.insert(i);
+        ldr->start();
+    }
+    // Optionally preload a small number of images behind the current one to
+    // facilitate smooth backward navigation.  Only start loaders for those
+    // indices if not already cached or loading.
+    for (int i = m_currentIndex - 1; i >= m_currentIndex - PRELOAD_BACK_DEPTH && i >= 0; --i) {
+        const QString key = m_images.at(i).absoluteFilePath();
+        if (m_preloaded.contains(key) || m_loading.contains(i)) continue;
         ImageLoader *ldr = new ImageLoader(i, key, this);
         connect(ldr, &ImageLoader::loaded,
                 this,  &PhotoTriageWindow::onImagePreloaded,
@@ -304,6 +427,89 @@ void PhotoTriageWindow::onImagePreloaded(int index, const QString &path, const Q
     // Remove from loading set by index if present
     m_loading.remove(index);
     ensurePreloadWindow();
+}
+
+// Initiate asynchronous thumbnail loading for list items that do not yet
+// have cached thumbnails.  Uses ImageLoader with a small target size to
+// reduce decoding overhead.  Loading is performed off the main thread and
+// results are delivered via onThumbnailLoaded().
+void PhotoTriageWindow::startThumbnailLoaders()
+{
+    // Do not attempt to load thumbnails if the list is empty or widget missing
+    if (!m_fileListWidget)
+        return;
+    // Build the pending queue of indices requiring thumbnail load.  Only
+    // enqueue items without a cached thumbnail and not already loading.
+    m_thumbPending.clear();
+    const int count = static_cast<int>(m_images.size());
+    for (int i = 0; i < count; ++i) {
+        const QString path = m_images.at(i).absoluteFilePath();
+        if (m_thumbnailCache.contains(path))
+            continue;
+        if (m_thumbLoadingPaths.contains(path))
+            continue;
+        m_thumbPending.enqueue(i);
+    }
+    // Immediately start up to MAX_THUMB_CONCURRENCY loaders.  Remaining tasks
+    // will be launched as earlier loads complete.  If the pending queue is
+    // empty, this call has no effect.
+    startNextThumbnailLoader();
+}
+
+void PhotoTriageWindow::startNextThumbnailLoader()
+{
+    // Launch new thumbnail loader(s) until we reach the concurrency limit or
+    // run out of pending items.  Using a loop here allows us to catch up
+    // quickly when multiple loads finish in rapid succession.
+    while (m_thumbLoadingPaths.size() < MAX_THUMB_CONCURRENCY && !m_thumbPending.isEmpty()) {
+        int index = m_thumbPending.dequeue();
+        if (index < 0 || index >= static_cast<int>(m_images.size()))
+            continue;
+        const QString path = m_images.at(index).absoluteFilePath();
+        // Skip if already cached or loading
+        if (m_thumbnailCache.contains(path) || m_thumbLoadingPaths.contains(path))
+            continue;
+        // Launch loader
+        ImageLoader *ldr = new ImageLoader(index, path, this, QSize(60, 60));
+        connect(ldr, &ImageLoader::loaded,
+                this, &PhotoTriageWindow::onThumbnailLoaded,
+                Qt::QueuedConnection);
+        connect(ldr, &QThread::finished, ldr, &QObject::deleteLater);
+        m_thumbLoadingPaths.insert(path);
+        ldr->start();
+    }
+}
+
+// Handle the completion of a thumbnail load.  Save the pixmap to the cache
+// and update the file list item if it still exists.  Remove the index from
+// the loading set.  The index parameter corresponds to the row in
+// m_images at load time; if the list has changed since launch, the
+// thumbnail may need to be discarded.
+void PhotoTriageWindow::onThumbnailLoaded(int index, const QString &path, const QImage &image)
+{
+    Q_UNUSED(index);
+    // Remove the path from the loading set.  This ensures that future
+    // requests for this thumbnail can proceed if the row shifts.
+    m_thumbLoadingPaths.remove(path);
+    // Cache the pixmap if valid
+    QPixmap pixmap = QPixmap::fromImage(image);
+    if (!pixmap.isNull()) {
+        m_thumbnailCache.insert(path, pixmap);
+    }
+    // Determine the current row of this path.  Rows may shift due to
+    // keep/reject/undo operations.  If found, update the icon on the list
+    // item.  Use a generic file icon if the pixmap is null.
+    int row = indexFromPath(path);
+    if (row >= 0 && row < m_fileListWidget->count()) {
+        QListWidgetItem *item = m_fileListWidget->item(row);
+        if (item) {
+            if (!pixmap.isNull()) {
+                item->setIcon(QIcon(pixmap));
+            }
+        }
+    }
+    // Launch the next thumbnail loader from the pending queue, if any
+    startNextThumbnailLoader();
 }
 
 void PhotoTriageWindow::performMove(const QString &action)
@@ -354,7 +560,8 @@ void PhotoTriageWindow::performMove(const QString &action)
         m_undoStack.pop_front();
     }
     // Remove from list
-    m_images.erase(m_images.begin() + m_currentIndex);
+    int removedIndex = m_currentIndex;
+    m_images.erase(m_images.begin() + removedIndex);
     // Adjust index to show next image
     if (m_currentIndex >= static_cast<int>(m_images.size())) {
         m_currentIndex = static_cast<int>(m_images.size()) - 1;
@@ -362,8 +569,31 @@ void PhotoTriageWindow::performMove(const QString &action)
     // Remove the cache entry for the file that is being removed
     const QString removedKey = fi.absoluteFilePath();
     m_preloaded.remove(removedKey);
+    // Remove the thumbnail cache entry as well and reset thumbnail loading
+    m_thumbnailCache.remove(removedKey);
+    // Update the file list widget: remove the corresponding item instead of
+    // rebuilding the entire list.  This keeps UI interactions snappy by
+    // avoiding unnecessary iterations.  Guard against null pointer just in case.
+    if (m_fileListWidget) {
+        QListWidgetItem *item = m_fileListWidget->takeItem(removedIndex);
+        delete item;
+        // Select the new current index after removal
+        if (m_currentIndex >= 0) {
+            m_fileListWidget->blockSignals(true);
+            m_fileListWidget->setCurrentRow(m_currentIndex);
+            m_fileListWidget->blockSignals(false);
+        }
+    }
     displayCurrentImage();
     ensurePreloadWindow();
+    // Remove the removed key from the set of currently loading thumbnails if
+    // present.  We do not clear the entire loading state because other
+    // thumbnails may still be loading and can continue uninterrupted.  When
+    // their loads finish they will be ignored if their path no longer exists
+    // in m_images.
+    m_thumbLoadingPaths.remove(removedKey);
+    // Queue loading of thumbnails for any images that now lack previews.
+    startThumbnailLoaders();
     // preloadNext();
 }
 
@@ -416,9 +646,118 @@ void PhotoTriageWindow::undoLastAction()
     m_images.insert(m_images.begin() + insertIndex, QFileInfo(action.originalPath));
     // Update current index
     m_currentIndex = insertIndex;
-    // Remove any cached entry for this image so it will be reloaded or re-preloaded as needed
+    // Remove any cached entry for this image so it will be reloaded or re‑preloaded as needed
     m_preloaded.remove(action.originalPath);
+    // Also clear any existing thumbnail for this path so a fresh one will be generated
+    m_thumbnailCache.remove(action.originalPath);
+    // Insert the restored entry into the file list widget instead of rebuilding all items.
+    if (m_fileListWidget) {
+        static QFileIconProvider iconProvider;
+        QListWidgetItem *newItem = new QListWidgetItem();
+        newItem->setText(QFileInfo(action.originalPath).fileName());
+        const QString opath = action.originalPath;
+        if (m_thumbnailCache.contains(opath)) {
+            newItem->setIcon(QIcon(m_thumbnailCache.value(opath)));
+        } else {
+            newItem->setIcon(iconProvider.icon(QFileInfo(opath)));
+        }
+        m_fileListWidget->insertItem(insertIndex, newItem);
+        // Select the newly restored item
+        m_fileListWidget->blockSignals(true);
+        m_fileListWidget->setCurrentRow(m_currentIndex);
+        m_fileListWidget->blockSignals(false);
+    }
     displayCurrentImage();
     ensurePreloadWindow();
+    // Remove the restored file path from the loading set in case a load is
+    // still pending for this item.  We avoid clearing the entire loading
+    // state to preserve in‑flight thumbnail loads for other images.  Those
+    // loads will update icons correctly once they complete.
+    m_thumbLoadingPaths.remove(action.originalPath);
+    // Queue loading of any thumbnails that are still missing.  This will
+    // schedule the restored item for loading if needed.
+    startThumbnailLoaders();
     // preloadNext();
+}
+
+// Move to the next image in the list without making any changes.  If already
+// at the last image, the index will remain unchanged.  This slot is triggered
+// by the Right arrow key.
+void PhotoTriageWindow::goToNextImage()
+{
+    if (m_currentIndex >= 0 && m_currentIndex + 1 < static_cast<int>(m_images.size())) {
+        m_currentIndex++;
+        displayCurrentImage();
+        ensurePreloadWindow();
+    }
+}
+
+// Move to the previous image in the list without making any changes.  If
+// already at the first image, the index will remain unchanged.  This slot is
+// triggered by the Left arrow key.
+void PhotoTriageWindow::goToPreviousImage()
+{
+    if (m_currentIndex > 0) {
+        m_currentIndex--;
+        displayCurrentImage();
+        ensurePreloadWindow();
+    }
+}
+
+// Respond to changes in the file list selection.  Updating m_currentIndex
+// allows the central image view to display the newly selected photo.  This
+// function is connected to the QListWidget::currentRowChanged signal.
+void PhotoTriageWindow::onFileListSelectionChanged(int row)
+{
+    if (row < 0 || row >= static_cast<int>(m_images.size()))
+        return;
+    // Update current index and display the selected image
+    m_currentIndex = row;
+    displayCurrentImage();
+    ensurePreloadWindow();
+}
+
+// Build or rebuild the file browser list.  Each entry displays a thumbnail
+// preview alongside the filename.  Thumbnails are generated synchronously
+// using scaled QPixmaps; because they are small (80×80) and we avoid loading
+// full-size pixmaps where possible, the performance impact remains acceptable
+// for modest numbers of images.  If images cannot be loaded, a placeholder
+// icon is used.
+void PhotoTriageWindow::populateFileList()
+{
+    if (!m_fileListWidget)
+        return;
+    m_fileListWidget->clear();
+    const int count = static_cast<int>(m_images.size());
+    // QFileIconProvider caches icons per file type and avoids costly image decoding.  Using
+    // it here keeps list population lightweight and preserves the responsive caching and
+    // preloading behaviour of the main image view.
+    static QFileIconProvider iconProvider;
+    m_fileListWidget->setUpdatesEnabled(false);
+    for (int i = 0; i < count; ++i) {
+        const QFileInfo &fi = m_images.at(i);
+        QListWidgetItem *item = new QListWidgetItem();
+        item->setText(fi.fileName());
+        // If a cached thumbnail exists, use it; otherwise use a generic file icon
+        const QString path = fi.absoluteFilePath();
+        if (m_thumbnailCache.contains(path)) {
+            item->setIcon(QIcon(m_thumbnailCache.value(path)));
+        } else {
+            item->setIcon(iconProvider.icon(fi));
+        }
+        m_fileListWidget->addItem(item);
+    }
+    m_fileListWidget->setUpdatesEnabled(true);
+    // Set the current selection and scroll into view without emitting signals
+    if (m_currentIndex >= 0 && m_currentIndex < count) {
+        m_fileListWidget->blockSignals(true);
+        m_fileListWidget->setCurrentRow(m_currentIndex);
+        m_fileListWidget->scrollToItem(m_fileListWidget->currentItem(), QAbstractItemView::PositionAtCenter);
+        m_fileListWidget->blockSignals(false);
+    }
+
+    // After building the list, start loading thumbnails asynchronously.  This
+    // call will skip items that already have cached previews or that are
+    // currently being loaded.
+    startThumbnailLoaders();
 }
