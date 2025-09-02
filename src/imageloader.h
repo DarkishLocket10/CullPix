@@ -8,6 +8,8 @@
 
 #include <QImage>
 #include <QThread>
+#include <QSize>
+#include <QString>
 
 // ImageLoader runs in its own QThread and emits a signal when
 // loading has finished.  It does not convert to QPixmap here because
@@ -16,7 +18,11 @@ class ImageLoader : public QThread
 {
     Q_OBJECT
 public:
-    ImageLoader(int index, const QString &path, QObject *parent = nullptr);
+    // Backward-compatible: existing call sites still compile.
+    ImageLoader(int index,
+                const QString &path,
+                QObject *parent = nullptr,
+                QSize targetSize = QSize());
     ~ImageLoader() override;
 
 signals:
@@ -33,4 +39,5 @@ protected:
 private:
     int m_index;
     QString m_path;
+    QSize m_targetSize; // optional decode target, label size.
 };

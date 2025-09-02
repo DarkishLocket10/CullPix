@@ -85,14 +85,6 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
 
 PhotoTriageWindow::~PhotoTriageWindow()
 {
-    // Ensure the loader thread stops gracefully
-    if (m_loader && m_loader->isRunning()) {
-        m_loader->requestInterruption();
-        m_loader->quit();
-        m_loader->wait();
-    }
-    delete m_loader;
-
     // Stop and delete the file worker
     if (m_fileWorker) {
         m_fileWorker->stop();
@@ -109,12 +101,6 @@ void PhotoTriageWindow::resizeEvent(QResizeEvent *event)
 
 void PhotoTriageWindow::closeEvent(QCloseEvent *event)
 {
-    // Make sure worker thread stops
-    if (m_loader && m_loader->isRunning()) {
-        m_loader->requestInterruption();
-        m_loader->quit();
-        m_loader->wait();
-    }
     // Stop file worker when closing
     if (m_fileWorker) {
         m_fileWorker->stop();
@@ -197,18 +183,23 @@ void PhotoTriageWindow::loadSourceDirectory(const QString &directory)
         QMessageBox::warning(this, tr("Invalid Directory"), tr("%1 is not a valid directory.").arg(directory));
         return;
     }
-    // Collect image files with supported extensions
-    const QStringList exts = {"*.jpg", "*.jpeg", "*.png", "*.bmp", "*.gif", "*.tif",
-                               "*.tiff", "*.webp", "*.avif"};
-    QFileInfoList fileList;
-    for (const QString &pattern : exts) {
-        fileList.append(dir.entryInfoList(QStringList() << pattern, QDir::Files | QDir::NoSymLinks, QDir::Name));
-    }
-    // Remove duplicates and sort naturally
+    // Collect image files with supported extensions.  Pass all filters at once to
+    // avoid duplicates (e.g. *.jpg and *.jpeg matching the same file).  The
+    // resulting list is sorted lexically by name; we'll sort naturally below.
+    const QStringList exts = {"*.jpg", "*.jpeg", "*.png", "*.bmp", "*.gif",
+                               "*.tif", "*.tiff", "*.webp", "*.avif"};
+    QFileInfoList fileList = dir.entryInfoList(exts, QDir::Files | QDir::NoSymLinks, QDir::Name);
+
+    // Transfer to std::vector for natural sorting and deduplicate by absolute path
     std::vector<QFileInfo> files;
     files.reserve(fileList.size());
+    QSet<QString> seen;
     for (const QFileInfo &fi : fileList) {
-        files.push_back(fi);
+        const QString abs = fi.absoluteFilePath();
+        if (!seen.contains(abs)) {
+            files.push_back(fi);
+            seen.insert(abs);
+        }
     }
     std::sort(files.begin(), files.end(), &PhotoTriageWindow::naturalLess);
 
@@ -230,7 +221,10 @@ void PhotoTriageWindow::loadSourceDirectory(const QString &directory)
     m_statusBar->clearMessage();
 
     displayCurrentImage();
-    // preloadNext();
+    // Begin preloading immediately so the next few images are ready before the user
+    // navigates.  This call will schedule ImageLoader instances via
+    // ensurePreloadWindow().
+    ensurePreloadWindow();
 }
 
 void PhotoTriageWindow::displayCurrentImage()

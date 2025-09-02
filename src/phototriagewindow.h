@@ -88,5 +88,6 @@ private:
     QPushButton *m_keepButton;
     QPushButton *m_rejectButton;
     QPushButton *m_undoButton;
-    ImageLoader *m_loader = nullptr;
+    // Loader for current image is handled asynchronously via ImageLoader instances
+    // created in ensurePreloadWindow().  A dedicated member is no longer needed.
 };
