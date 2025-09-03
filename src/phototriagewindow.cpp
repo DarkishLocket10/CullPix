@@ -9,6 +9,7 @@
 #include "imageloader.h"
 #include "fileworker.h"
 
+
 #include <QLabel>
 #include <QPushButton>
 #include <QStatusBar>
@@ -34,6 +35,7 @@
 #include <QFileIconProvider>
 #include <cctype>
 #include <QVector>
+
 
 
 PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
