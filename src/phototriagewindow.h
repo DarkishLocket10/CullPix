@@ -162,5 +162,4 @@ private:
     // pending.
     void onThumbnailLoaded(int index, const QString &path, const QImage &image);
     // Loader for current image is handled asynchronously via ImageLoader instances
-    // created in ensurePreloadWindow().  A dedicated member is no longer needed.
 };

@@ -33,6 +33,8 @@
 #include <QPixmap>
 #include <QFileIconProvider>
 #include <cctype>
+#include <QVector>
+
 
 PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -40,12 +42,6 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     setWindowTitle(QStringLiteral("Photo‑Triage"));
     resize(1000, 700);
 
-    // Overall application styling.  Apply a modern dark theme with off‑white text
-    // and a muted accent palette.  Avoid pure black and pure white in accordance
-    // with accessibility recommendations for dark interfaces【555328609052638†L132-L141】.  The use
-    // of dark gray (#121212) for backgrounds and off‑white (#E0E0E0) for text
-    // reduces eye strain and improves readability【555328609052638†L132-L141】.  Accent
-    // colors are used sparingly on interactive elements to guide attention.
     QString appStyle = R"(
         QMainWindow {
             background-color: #121212;
@@ -59,7 +55,7 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
             border-top: 1px solid #333;
         }
         QListWidget {
-            background-color: #1A1A1A; // someone come get lex luthor lol.
+            background-color: #1A1A1A; /* someone come get lex luthor lol. */
             color: #CCCCCC;
             border: none;
         }
@@ -77,9 +73,7 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     // Set up the side file browser and central image display.  Use a
     // splitter so the user can adjust the space between the two panes.  The
     // left pane shows a thumbnail list of images; the right pane displays
-    // the currently selected photo.  Splitting the UI like this follows
-    // minimalistic design principles by clearly separating navigation
-    // controls from content【780516724173997†L23-L44】.
+    // the currently selected photo.
     m_fileListWidget = new QListWidget(this);
     m_fileListWidget->setViewMode(QListView::ListMode);
     m_fileListWidget->setIconSize(QSize(80, 80));
@@ -132,9 +126,6 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     connect(m_rejectButton, &QPushButton::clicked, this, &PhotoTriageWindow::handleMoveReject);
     connect(m_undoButton, &QPushButton::clicked, this, &PhotoTriageWindow::undoLastAction);
 
-    // Tool bar layout: wrap the buttons in a QWidget to align them neatly.  Use
-    // spacing and margins that provide breathing room without excess clutter
-    // (negative space is an essential element of minimalist design【780516724173997†L77-L88】).
     QWidget *toolbarWidget = new QWidget(this);
     QHBoxLayout *hbox = new QHBoxLayout(toolbarWidget);
     hbox->setContentsMargins(10, 8, 10, 8);
@@ -150,8 +141,19 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     addToolBar(Qt::BottomToolBarArea, tb);
 
     // Shortcuts
-    new QShortcut(QKeySequence(QStringLiteral("Z")), this, SLOT(handleMoveKeep()));
-    new QShortcut(QKeySequence(QStringLiteral("X")), this, SLOT(handleMoveReject()));
+    // new QShortcut(QKeySequence(QStringLiteral("Z")), this, SLOT(handleMoveKeep()));
+    //new QShortcut(QKeySequence(QStringLiteral("X")), this, SLOT(handleMoveReject()));
+    auto sKeep = new QShortcut(QKeySequence(QStringLiteral("Z")), this);
+    sKeep->setAutoRepeat(false);
+    sKeep->setContext(Qt::ApplicationShortcut);
+    connect(sKeep, &QShortcut::activated, this, &PhotoTriageWindow::handleMoveKeep);
+
+    auto sReject = new QShortcut(QKeySequence(QStringLiteral("X")), this);
+    sReject->setAutoRepeat(false);
+    sReject->setContext(Qt::ApplicationShortcut);
+    connect(sReject, &QShortcut::activated, this, &PhotoTriageWindow::handleMoveReject);
+
+
     new QShortcut(QKeySequence(QStringLiteral("U")), this, SLOT(undoLastAction()));
     new QShortcut(QKeySequence(QStringLiteral("Ctrl+Z")), this, SLOT(undoLastAction()));
     new QShortcut(QKeySequence(QStringLiteral("O")), this, SLOT(chooseSourceFolder()));
@@ -203,61 +205,134 @@ void PhotoTriageWindow::chooseSourceFolder()
     }
 }
 
-bool PhotoTriageWindow::naturalLess(const QFileInfo &a, const QFileInfo &b)
-{
-    // Compare two filenames using natural sorting.  Numeric runs are
-    // compared as integers and other characters case‑insensitively.
-    const QString sa = a.fileName();
-    const QString sb = b.fileName();
-    const auto toLower = [](QChar ch) {
-        return ch.toLower();
+static inline bool isSep(QChar c) {
+    return c == QChar('-') || c == QChar('_') || c == QChar(' ') || c == QChar('.');
+}
+
+struct Token {
+    bool isNum;
+    qint64 num; // valid if isNum == true
+    int start; // begin index in source string for text
+    int len; // length of text, for numbers, this holds the digit count for tie breakers.
+};
+
+struct SortKey{
+    QString base; // completeBaseName() (owned, so indicies remain valid)
+    QString ext; // suffic()
+    QVector<Token> tokens; // Tokens for 'base'
+};
+
+static void buildTokens(const QString& s, QVector<Token>& out) {
+    out.clear();
+    const int n = s.size();
+    int i = 0;
+
+    auto skipSeps = [&](int &k){
+        while (k < n && isSep(s[k])) ++k;
     };
-    int ia = 0;
-    int ib = 0;
-    while (ia < sa.size() && ib < sb.size()) {
-        QChar ca = sa.at(ia);
-        QChar cb = sb.at(ib);
-        bool isDa = ca.isDigit();
-        bool isDb = cb.isDigit();
-        if (isDa && isDb) {
-            // Extract full numeric substrings
-            int startA = ia;
-            int startB = ib;
-            while (ia < sa.size() && sa.at(ia).isDigit()) ++ia;
-            while (ib < sb.size() && sb.at(ib).isDigit()) ++ib;
-            const QString numAStr = sa.mid(startA, ia - startA);
-            const QString numBStr = sb.mid(startB, ib - startB);
-            bool okA = false;
-            bool okB = false;
-            // Use 64‑bit conversion to handle large numbers
-            qlonglong numA = numAStr.toLongLong(&okA);
-            qlonglong numB = numBStr.toLongLong(&okB);
-            if (okA && okB) {
-                if (numA != numB) {
-                    return numA < numB;
-                }
-            } else {
-                // Fallback to lexicographic comparison
-                int cmp = QString::compare(numAStr, numBStr, Qt::CaseInsensitive);
-                if (cmp != 0) {
-                    return cmp < 0;
-                }
+
+    while (i < n) {
+        skipSeps(i);
+        if (i >= n) break;
+
+        const QChar c = s[i];
+        if (c.isDigit()) {
+            qint64 v = 0;
+            int start = i;
+            while (i < n && s[i].isDigit()) {
+                v = v * 10 + (s[i].unicode() - '0');
+                ++i;
             }
-            // If numbers are equal, continue comparison
-        } else {
-            // Compare characters case‑insensitively
-            QChar lca = ca.toLower();
-            QChar lcb = cb.toLower();
-            if (lca != lcb) {
-                return lca < lcb;
-            }
-            ++ia;
-            ++ib;
+            Token t;
+            t.isNum = true;
+            t.num = v;
+            t.start = start;
+            t.len = i - start; // here is our digit count for the tie breaker. (ex: 2 vs 002)
+            out.push_back(t);
+        }
+        else {
+            int start = i;
+            while (i < n && !s[i].isDigit() && !isSep(s[i])) ++i;
+            Token t;
+            t.isNum = false;
+            t.num = 0;
+            t.start = start;
+            t.len = i - start;
+            out.push_back(t);
         }
     }
-    // When prefixes are equal, shorter string sorts first
-    return sa.size() < sb.size();
 }
+
+// case insensitive compare of two text slices in 'src' without allocations
+static int cmpTextCI(const QString& srcA, int aStart, int aLen, const QString& srcB, int bStart, int bLen) {
+
+    const int L = qMin(aLen, bLen);
+
+    for (int k = 0; k < L; ++k) {
+        ushort ca = srcA[aStart + k].toLower().unicode();
+        ushort cb = srcB[bStart + k].toLower().unicode();
+
+        if (ca != cb) {
+            return (ca < cb) ? -1 : 1;
+        }
+    }
+    // All compared characters are equal up to the length of the shorter substring.
+    // Let the caller decide based on length or other criteria; here we indicate equality.
+    return 0;
+}
+
+
+static int cmpTokens(const SortKey& A, const SortKey& B) {
+    const auto& a = A.tokens;
+    const auto& b = B.tokens;
+    int ia = 0, ib = 0;
+
+    while (ia < a.size() && ib < b.size()) {
+        const Token &ta = a[ia], &tb = b[ib];
+
+        if (ta.isNum && tb.isNum) {
+            if (ta.num != tb.num) return (ta.num < tb.num) ? -1 : 1;
+            // same numeric value; prefer shorter digit run (e.g., "2" < "002")
+            if (ta.len != tb.len) return (ta.len < tb.len) ? -1 : 1;
+        } else if (!ta.isNum && !tb.isNum) {
+            int c = cmpTextCI(A.base, ta.start, ta.len, B.base, tb.start, tb.len);
+            if (c != 0) return c;
+        } else {
+            // Decide whether text < number or number < text. Explorer-like feel prefers text first.
+            return ta.isNum ? 1 : -1;
+        }
+        ++ia; ++ib;
+    }
+
+    // prefix rule: fewer tokens wins.
+    if (ia != ib) return (ia < ib) ? -1 : 1;
+    // Tie-break: extension (case-insensitive, simplistic is fine)
+    int c = cmpTextCI(A.ext, 0, A.ext.size(), B.ext, 0, B.ext.size());
+    if (c != 0) return c;
+
+    // Final fallback: compare full fileName (stable order)
+    // (This is very rarely hit; helps keep sort stable across equal keys.)
+    return 0;
+}
+
+static bool naturalLessKeyed(const std::pair<QFileInfo, SortKey>& A,
+                             const std::pair<QFileInfo, SortKey>& B) {
+    const int c = cmpTokens(A.second, B.second);
+    if (c != 0) return c < 0;
+
+    // Fallback on full filename CI compare to stabilize exact ties:
+    const QString fa = A.first.fileName();
+    const QString fb = B.first.fileName();
+    const int L = qMin(fa.size(), fb.size());
+    for (int i = 0; i < L; ++i) {
+        ushort ca = fa[i].toLower().unicode();
+        ushort cb = fb[i].toLower().unicode();
+        if (ca != cb) return ca < cb;
+    }
+    return fa.size() < fb.size();
+}
+
+
 
 void PhotoTriageWindow::loadSourceDirectory(const QString &directory)
 {
@@ -270,7 +345,7 @@ void PhotoTriageWindow::loadSourceDirectory(const QString &directory)
     // avoid duplicates (e.g. *.jpg and *.jpeg matching the same file).  The
     // resulting list is sorted lexically by name; we'll sort naturally below.
     const QStringList exts = {"*.jpg", "*.jpeg", "*.png", "*.bmp", "*.gif",
-                               "*.tif", "*.tiff", "*.webp", "*.avif"};
+                               "*.tif", "*.tiff", "*.webp", "*.avif", "*.ARW"};
     QFileInfoList fileList = dir.entryInfoList(exts, QDir::Files | QDir::NoSymLinks, QDir::Name);
 
     // Transfer to std::vector for natural sorting and deduplicate by absolute path
@@ -284,7 +359,25 @@ void PhotoTriageWindow::loadSourceDirectory(const QString &directory)
             seen.insert(abs);
         }
     }
-    std::sort(files.begin(), files.end(), &PhotoTriageWindow::naturalLess);
+    // std::sort(files.begin(), files.end(), &PhotoTriageWindow::naturalLess);
+    // Pre-tokenize once, then sort on the keys (fast)
+    std::vector<std::pair<QFileInfo, SortKey>> keyed;
+    keyed.reserve(files.size());
+    for (const QFileInfo& fi : files) {
+        SortKey k;
+        k.base = fi.completeBaseName();
+        k.ext  = fi.suffix();
+        buildTokens(k.base, k.tokens);
+        keyed.emplace_back(fi, std::move(k));
+    }
+
+    std::sort(keyed.begin(), keyed.end(), &naturalLessKeyed);
+
+    files.clear();
+    files.reserve(keyed.size());
+    for (const auto &pair : keyed) {
+        files.push_back(pair.first);
+    }
 
     m_images = std::move(files);
     m_currentIndex = m_images.empty() ? -1 : 0;
@@ -574,16 +667,29 @@ void PhotoTriageWindow::performMove(const QString &action)
     // Update the file list widget: remove the corresponding item instead of
     // rebuilding the entire list.  This keeps UI interactions snappy by
     // avoiding unnecessary iterations.  Guard against null pointer just in case.
+
+    // if (m_fileListWidget) {
+    //     QListWidgetItem *item = m_fileListWidget->takeItem(removedIndex);
+    //     delete item;
+    //     // Select the new current index after removal
+    //     if (m_currentIndex >= 0) {
+
+    //         m_fileListWidget->setCurrentRow(m_currentIndex);
+
+    //     }
+    //     m_fileListWidget->setCurrentRow(m_currentIndex);
+    // }
     if (m_fileListWidget) {
-        QListWidgetItem *item = m_fileListWidget->takeItem(removedIndex);
-        delete item;
-        // Select the new current index after removal
-        if (m_currentIndex >= 0) {
             m_fileListWidget->blockSignals(true);
-            m_fileListWidget->setCurrentRow(m_currentIndex);
+            QListWidgetItem *item = m_fileListWidget->takeItem(removedIndex);
+            delete item;
+            if (m_currentIndex >= 0) {
+                    m_fileListWidget->setCurrentRow(m_currentIndex);
+                }
             m_fileListWidget->blockSignals(false);
         }
-    }
+
+
     displayCurrentImage();
     ensurePreloadWindow();
     // Remove the removed key from the set of currently loading thumbnails if
