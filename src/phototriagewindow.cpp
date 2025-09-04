@@ -1,14 +1,13 @@
 // phototriagewindow.cpp
 //
-// Implements the PhotoTriageWindow class.  This class provides
-// the main user interface for browsing and culling images.  The
+// Implements the PhotoTriageWindow class. This class provides
+// the main user interface for browsing and culling images. The
 // implementation focuses on keep/reject behaviour and includes a
 // basic undo stack.
 
 #include "phototriagewindow.h"
 #include "imageloader.h"
 #include "fileworker.h"
-
 
 #include <QLabel>
 #include <QPushButton>
@@ -33,6 +32,13 @@
 #include <QIcon>
 #include <QPixmap>
 #include <QFileIconProvider>
+#include <QSet>
+#include <QQueue>
+
+// RawLoader provides decoding of RAW photo formats using LibRaw.
+#ifdef HAVE_LIBRAW
+#include "rawloader.h"
+#endif
 #include <cctype>
 #include <QVector>
 
@@ -72,8 +78,8 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     )";
     qApp->setStyleSheet(appStyle);
 
-    // Set up the side file browser and central image display.  Use a
-    // splitter so the user can adjust the space between the two panes.  The
+    // Set up the side file browser and central image display. Use a
+    // splitter so the user can adjust the space between the two panes. The
     // left pane shows a thumbnail list of images; the right pane displays
     // the currently selected photo.
     m_fileListWidget = new QListWidget(this);
@@ -100,8 +106,8 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     // Status bar
     m_statusBar = statusBar();
 
-    // Buttons with contemporary styling.  Each button uses a distinct accent
-    // color to convey its purpose.  A green tone is used for "Keep", a
+    // Buttons with contemporary styling. Each button uses a distinct accent
+    // color to convey its purpose. A green tone is used for "Keep", a
     // salmon/red tone for "Reject", and a soft orange for "Undo".
     m_keepButton = new QPushButton(tr("Keep (Z)"));
     m_rejectButton = new QPushButton(tr("Reject (X)"));
@@ -144,7 +150,7 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
 
     // Shortcuts
     // new QShortcut(QKeySequence(QStringLiteral("Z")), this, SLOT(handleMoveKeep()));
-    //new QShortcut(QKeySequence(QStringLiteral("X")), this, SLOT(handleMoveReject()));
+    // new QShortcut(QKeySequence(QStringLiteral("X")), this, SLOT(handleMoveReject()));
     auto sKeep = new QShortcut(QKeySequence(QStringLiteral("Z")), this);
     sKeep->setAutoRepeat(false);
     sKeep->setContext(Qt::ApplicationShortcut);
@@ -346,8 +352,20 @@ void PhotoTriageWindow::loadSourceDirectory(const QString &directory)
     // Collect image files with supported extensions.  Pass all filters at once to
     // avoid duplicates (e.g. *.jpg and *.jpeg matching the same file).  The
     // resulting list is sorted lexically by name; we'll sort naturally below.
-    const QStringList exts = {"*.jpg", "*.jpeg", "*.png", "*.bmp", "*.gif",
-                               "*.tif", "*.tiff", "*.webp", "*.avif", "*.ARW"};
+    // Supported file extensions.  Include common RAW formats alongside
+    // standard image types.  Use both lowercase and uppercase patterns so
+    // case‑sensitive filesystems are handled.  When adding new RAW types
+    // here ensure the detection logic in ImageLoader/RawLoader matches.
+    const QStringList exts = {
+        "*.jpg", "*.jpeg", "*.png", "*.bmp", "*.gif",
+        "*.tif", "*.tiff", "*.webp", "*.avif",
+        // RAW formats (Sony, Canon, Nikon, Fujifilm, Panasonic, Leica, Olympus, Pentax, Samsung, Adobe, generic)
+        "*.arw", "*.ARW", "*.cr2", "*.CR2", "*.cr3", "*.CR3",
+        "*.nef", "*.NEF", "*.nrw", "*.NRW", "*.raf", "*.RAF",
+        "*.rw2", "*.RW2", "*.rwl", "*.RWL", "*.orf", "*.ORF",
+        "*.pef", "*.PEF", "*.srw", "*.SRW", "*.dng", "*.DNG",
+        "*.raw", "*.RAW"
+    };
     QFileInfoList fileList = dir.entryInfoList(exts, QDir::Files | QDir::NoSymLinks, QDir::Name);
 
     // Transfer to std::vector for natural sorting and deduplicate by absolute path
@@ -436,7 +454,33 @@ void PhotoTriageWindow::displayCurrentImage()
     if (m_preloaded.contains(key)) {
         image = m_preloaded.value(key);
     } else {
-        image.load(fi.filePath());
+        // Attempt to synchronously load the image.  We try Qt’s loader first;
+        // if that fails and the file is a RAW, fall back to RawLoader.
+        // This mirrors the logic used in ImageLoader but runs on the UI thread.
+        if (!image.load(fi.filePath())) {
+#ifdef HAVE_LIBRAW
+            // Determine whether the extension suggests a RAW file
+            auto isRawExtension = [](const QString &ext) {
+                static const QSet<QString> rawExts = {
+                    QStringLiteral("arw"), QStringLiteral("cr2"), QStringLiteral("cr3"),
+                    QStringLiteral("nef"), QStringLiteral("nrw"), QStringLiteral("raf"),
+                    QStringLiteral("rw2"), QStringLiteral("rwl"), QStringLiteral("orf"),
+                    QStringLiteral("pef"), QStringLiteral("srw"), QStringLiteral("dng"),
+                    QStringLiteral("raw")
+                };
+                return rawExts.contains(ext.toLower());
+            };
+            const QString ext = fi.suffix();
+            if (isRawExtension(ext)) {
+                QImage rawImg;
+                // Try embedded preview first; if that fails use demosaic (half size).
+                if (RawLoader::loadEmbeddedPreview(fi.filePath(), rawImg) ||
+                    RawLoader::loadDemosaiced(fi.filePath(), rawImg, true)) {
+                    image = rawImg;
+                }
+            }
+#endif
+        }
     }
     QPixmap pixmap = QPixmap::fromImage(image);
     if (!pixmap.isNull()) {

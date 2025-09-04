@@ -73,9 +73,9 @@ void FileWorker::run()
             }
         }
         if (!task.source.isEmpty() && !task.destination.isEmpty()) {
-            // Perform the file move.  QFile::rename returns true on success.
+            // Perform the file move. QFile::rename returns true on success.
             // If the rename fails (e.g. due to permissions or files on different
-            // volumes), log a warning so the caller can investigate.  Consider
+            // volumes), log a warning so the caller can investigate. Consider
             // adding more robust error handling in the future (copy/delete on
             // failure).
             if (!QFile::rename(task.source, task.destination)) {

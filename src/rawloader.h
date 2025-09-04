@@ -9,5 +9,5 @@ namespace RawLoader {
 
     // Full demosaic to 8-bit sRGB (heavier but best quality).
     bool loadDemosaiced(const QString& path, QImage& out,
-                        bool halfSize=true); // halfSize is MUCH faster
+                        bool halfSize=true); // halfSize is faster.
 }
