@@ -1,8 +1,8 @@
 // fileworker.h
 //
 // Defines a simple background worker that processes file move tasks on a
-// separate thread.  It uses a thread‑safe queue guarded by a mutex and
-// condition variable.  The worker continually waits for tasks to be
+// separate thread. Utilizes a thread‑safe queue guarded by a mutex and
+// condition variable. The worker continually waits for tasks to be
 // available and performs file operations without blocking the UI.
 
 #pragma once
@@ -32,9 +32,9 @@ public:
     void enqueue(const FileTask &task);
 
     // Attempt to cancel a pending task with the given source path.  If a
-    // matching task is found and removed from the queue, returns true.
+    // matching task is found and removed from the queue, return true.
     // If the task is not in the queue (either already processed or not
-    // present), returns false.  This is used by undo logic to remove
+    // present), return false. This is used by undo logic to remove
     // tasks that have not yet executed.
     bool cancelTask(const QString &source);
 

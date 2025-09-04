@@ -1,6 +1,6 @@
 // main.cpp
 //
-// Entry point for the Photo‑Triage C++ application.  It simply
+// Entry point for the Photo‑Triage C++ application. It simply
 // instantiates QApplication and the main window.
 
 #include "phototriagewindow.h"

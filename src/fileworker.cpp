@@ -2,6 +2,10 @@
 
 #include "fileworker.h"
 
+// For logging move errors.  Qt's debug facilities output messages
+// to the appropriate console or log depending on platform.
+#include <QDebug>
+
 FileWorker::FileWorker()
     : m_running(true), m_thread(&FileWorker::run, this)
 {
@@ -69,9 +73,15 @@ void FileWorker::run()
             }
         }
         if (!task.source.isEmpty() && !task.destination.isEmpty()) {
-            // Perform the file move.  QFile::rename returns true on success.
-            // We ignore failure here; error handling can be added later.
-            QFile::rename(task.source, task.destination);
+            // Perform the file move. QFile::rename returns true on success.
+            // If the rename fails (e.g. due to permissions or files on different
+            // volumes), log a warning so the caller can investigate. Consider
+            // adding more robust error handling in the future (copy/delete on
+            // failure).
+            if (!QFile::rename(task.source, task.destination)) {
+                qWarning() << "FileWorker: failed to move" << task.source
+                           << "to" << task.destination;
+            }
         }
     }
 }
