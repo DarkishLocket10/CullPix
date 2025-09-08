@@ -1,4 +1,4 @@
-# Photo Triage
+# CullPix
 
 A super-fast desktop app for triaging photos — **keep / reject / undo** — with a slick, keyboard-first workflow and RAW support.
 
