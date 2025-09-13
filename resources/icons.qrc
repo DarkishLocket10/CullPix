@@ -1,0 +1,7 @@
+<RCC>
+  <qresource prefix="/">
+    <file>app.ico</file>
+    <!-- optional higher-quality raster for other OSes -->
+    <!-- <file>resources/app.png</file> -->
+  </qresource>
+</RCC>

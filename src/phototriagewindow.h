@@ -19,6 +19,7 @@ class QPushButton;
 class QStatusBar;
 class ImageLoader;
 class QListWidget;
+class QAction;
 
 // Forward declarations for asynchronous file worker
 struct FileTask;
@@ -67,6 +68,10 @@ private:
     void preloadNext();
     void performMove(const QString &action);
     static bool naturalLess(const QFileInfo &a, const QFileInfo &b);
+
+    QPushButton* m_openButton = nullptr;
+    QAction* m_openAct = nullptr; // menu action
+    QString m_lastDir; // remember last directory
 
     // Populate the side file browser with the current set of images. This helper
     // clears m_fileListWidget and inserts an entry for each element in

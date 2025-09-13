@@ -129,6 +129,20 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
                                  "QPushButton:hover { background-color: #D68F54; } "
                                  "QPushButton:pressed { background-color: #BB7A46; }");
 
+    m_openButton = new QPushButton(tr("Open Folder..."));
+    m_openButton->setToolTip(tr("Open a folder of images (Ctrl+O)"));
+    m_openButton->setShortcut(QKeySequence::Open);
+    m_openButton->setAutoDefault(false);
+
+    m_openButton->setStyleSheet("QPushButton { background-color: #272b33; color: #FFFFFF; "
+                                "border: none; border-radius: 6px; padding: 8px 16px; "
+                                "font-weight: 600; } "
+                                "QPushButton:hover { background-color: #23272e; } "
+                                "QPushButton:pressed { background-color: #1f2329; }");
+
+
+    connect(m_openButton, &QPushButton::clicked, this, &PhotoTriageWindow::chooseSourceFolder);
+
     // Connect button clicks to handlers
     connect(m_keepButton, &QPushButton::clicked, this, &PhotoTriageWindow::handleMoveKeep);
     connect(m_rejectButton, &QPushButton::clicked, this, &PhotoTriageWindow::handleMoveReject);
@@ -136,6 +150,7 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
 
     QWidget *toolbarWidget = new QWidget(this);
     QHBoxLayout *hbox = new QHBoxLayout(toolbarWidget);
+    hbox->insertWidget(0, m_openButton);
     hbox->setContentsMargins(10, 8, 10, 8);
     hbox->setSpacing(12);
     hbox->addWidget(m_keepButton);

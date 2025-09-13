@@ -8,6 +8,8 @@ project(photo_triage_cpp
 # Enable automatic Qt processing
 set(CMAKE_AUTOMOC ON)   # Run moc automatically
 set(CMAKE_AUTOUIC ON)   # Run uic automatically
+set(CMAKE_AUTORCC ON)
+
 
 # Enable C++17
 set(CMAKE_CXX_STANDARD 17)
@@ -81,6 +83,8 @@ add_executable(photo_triage_cpp
     src/fileworker.h
     src/rawloader.cpp
     src/rawloader.h
+    src/appicon.rc
+    resources/icons.qrc
 )
 
 # -------- Link libraries --------
