@@ -1,4 +1,5 @@
-# CullPix
+# CullPix [![C++](https://img.shields.io/badge/C++-language-00599C)](https://en.wikipedia.org/wiki/C%2B%2B) ![Version 0.3.0](https://img.shields.io/badge/Version-0.3.0-blue) ![Platform](https://img.shields.io/badge/Platform-Windows-0078D6) ![Qt 6](https://img.shields.io/badge/Qt-6-41CD52)
+
 
 A super-fast desktop app for triaging photos — **keep / reject / undo** — with a slick, keyboard-first workflow and RAW support.
 
