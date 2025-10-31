@@ -56,6 +56,10 @@ private slots:
     void goToNextImage();
     void goToPreviousImage();
 
+    // Open the editor dialog for the current image.  This provides
+    // controls for exposure, contrast and highlight adjustments and
+    // updates the preview accordingly.
+    void openEditor();
     // Handle selection changes in the file browser list.
     void onFileListSelectionChanged(int row);
 
@@ -119,6 +123,7 @@ private:
     QPushButton *m_keepButton;
     QPushButton *m_rejectButton;
     QPushButton *m_undoButton;
+    QPushButton *m_editButton;
 
     // Side panel for browsing available images. This list displays
     // thumbnails and filenames for all images in the current

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE QtCreatorProject>
-<!-- Written by QtCreator 17.0.0, 2025-09-13T10:19:16. -->
+<!-- Written by QtCreator 17.0.0, 2025-10-30T19:59:28. -->
 <qtcreator>
  <data>
   <variable>EnvironmentId</variable>
@@ -104,16 +104,16 @@
     <value type="int" key="CMake.Configure.BaseEnvironment">2</value>
     <value type="bool" key="CMake.Configure.ClearSystemEnvironment">false</value>
     <valuelist type="QVariantList" key="CMake.Configure.UserEnvironmentChanges"/>
-    <value type="QString" key="CMake.Initial.Parameters">-DCMAKE_C_COMPILER:FILEPATH=%{Compiler:Executable:C}
--DCMAKE_BUILD_TYPE:STRING=Debug
+    <value type="QString" key="CMake.Initial.Parameters">-DQT_QMAKE_EXECUTABLE:FILEPATH=%{Qt:qmakeExecutable}
+-DCMAKE_PROJECT_INCLUDE_BEFORE:FILEPATH=%{BuildConfig:BuildDirectory:NativeFilePath}/.qtc/package-manager/auto-setup.cmake
 -DCMAKE_PREFIX_PATH:PATH=%{Qt:QT_INSTALL_PREFIX}
--DCMAKE_CXX_COMPILER:FILEPATH=%{Compiler:Executable:Cxx}
--DQT_MAINTENANCE_TOOL:FILEPATH=C:/Qt/MaintenanceTool.exe
 -DCMAKE_GENERATOR:STRING=Ninja
--DQT_QMAKE_EXECUTABLE:FILEPATH=%{Qt:qmakeExecutable}
 -DCMAKE_CXX_FLAGS_INIT:STRING=%{Qt:QML_DEBUG_FLAG}
+-DCMAKE_CXX_COMPILER:FILEPATH=%{Compiler:Executable:Cxx}
+-DCMAKE_C_COMPILER:FILEPATH=%{Compiler:Executable:C}
 -DCMAKE_COLOR_DIAGNOSTICS:BOOL=ON
--DCMAKE_PROJECT_INCLUDE_BEFORE:FILEPATH=%{BuildConfig:BuildDirectory:NativeFilePath}/.qtc/package-manager/auto-setup.cmake</value>
+-DQT_MAINTENANCE_TOOL:FILEPATH=C:/Qt/MaintenanceTool.exe
+-DCMAKE_BUILD_TYPE:STRING=Debug</value>
     <value type="int" key="EnableQmlDebugging">0</value>
     <value type="QString" key="ProjectExplorer.BuildConfiguration.BuildDirectory">C:\Documents\Coding\async2\phototriage_cpp\build\Desktop_Qt_6_9_1_MSVC2022_64bit-Debug</value>
     <valuemap type="QVariantMap" key="ProjectExplorer.BuildConfiguration.BuildStepList.0">
@@ -231,18 +231,18 @@
     <value type="int" key="CMake.Configure.BaseEnvironment">2</value>
     <value type="bool" key="CMake.Configure.ClearSystemEnvironment">false</value>
     <valuelist type="QVariantList" key="CMake.Configure.UserEnvironmentChanges"/>
-    <value type="QString" key="CMake.Initial.Parameters">-DVCPKG_TARGET_TRIPLET:STRING=x64-windows
--DCMAKE_C_COMPILER:FILEPATH=%{Compiler:Executable:C}
--DCMAKE_BUILD_TYPE:STRING=Release
--DCMAKE_PREFIX_PATH:PATH=C:/Qt/6.9.1/msvc2022_64
--DCMAKE_CXX_COMPILER:FILEPATH=%{Compiler:Executable:Cxx}
--DQT_MAINTENANCE_TOOL:FILEPATH=C:/Qt/MaintenanceTool.exe
--DCMAKE_GENERATOR:STRING=Ninja
--DQT_QMAKE_EXECUTABLE:FILEPATH=%{Qt:qmakeExecutable}
--DCMAKE_CXX_FLAGS_INIT:STRING=%{Qt:QML_DEBUG_FLAG}
--DCMAKE_COLOR_DIAGNOSTICS:BOOL=ON
+    <value type="QString" key="CMake.Initial.Parameters">-DQT_QMAKE_EXECUTABLE:FILEPATH=%{Qt:qmakeExecutable}
 -DCMAKE_PROJECT_INCLUDE_BEFORE:FILEPATH=%{BuildConfig:BuildDirectory:NativeFilePath}/.qtc/package-manager/auto-setup.cmake
--DCMAKE_TOOLCHAIN_FILE:STRING=C:\Dev\vcpkg\scripts\buildsystems\vcpkg.cmake</value>
+-DCMAKE_PREFIX_PATH:PATH=C:/Qt/6.9.1/msvc2022_64
+-DCMAKE_GENERATOR:STRING=Ninja
+-DCMAKE_CXX_FLAGS_INIT:STRING=%{Qt:QML_DEBUG_FLAG}
+-DVCPKG_TARGET_TRIPLET:STRING=x64-windows
+-DCMAKE_CXX_COMPILER:FILEPATH=%{Compiler:Executable:Cxx}
+-DCMAKE_C_COMPILER:FILEPATH=%{Compiler:Executable:C}
+-DCMAKE_TOOLCHAIN_FILE:STRING=C:\Dev\vcpkg\scripts\buildsystems\vcpkg.cmake
+-DCMAKE_COLOR_DIAGNOSTICS:BOOL=ON
+-DQT_MAINTENANCE_TOOL:FILEPATH=C:/Qt/MaintenanceTool.exe
+-DCMAKE_BUILD_TYPE:STRING=Release</value>
     <value type="QString" key="ProjectExplorer.BuildConfiguration.BuildDirectory">C:\Documents\Coding\async2\phototriage_cpp\build\Desktop_Qt_6_9_1_MSVC2022_64bit-Release</value>
     <valuemap type="QVariantMap" key="ProjectExplorer.BuildConfiguration.BuildStepList.0">
      <valuemap type="QVariantMap" key="ProjectExplorer.BuildStepList.Step.0">
@@ -455,16 +455,16 @@
     <value type="int" key="CMake.Configure.BaseEnvironment">2</value>
     <value type="bool" key="CMake.Configure.ClearSystemEnvironment">false</value>
     <valuelist type="QVariantList" key="CMake.Configure.UserEnvironmentChanges"/>
-    <value type="QString" key="CMake.Initial.Parameters">-DCMAKE_C_COMPILER:FILEPATH=%{Compiler:Executable:C}
--DCMAKE_BUILD_TYPE:STRING=Debug
+    <value type="QString" key="CMake.Initial.Parameters">-DQT_QMAKE_EXECUTABLE:FILEPATH=%{Qt:qmakeExecutable}
+-DCMAKE_PROJECT_INCLUDE_BEFORE:FILEPATH=%{BuildConfig:BuildDirectory:NativeFilePath}/.qtc/package-manager/auto-setup.cmake
 -DCMAKE_PREFIX_PATH:PATH=%{Qt:QT_INSTALL_PREFIX}
--DCMAKE_CXX_COMPILER:FILEPATH=%{Compiler:Executable:Cxx}
--DQT_MAINTENANCE_TOOL:FILEPATH=C:/Qt/MaintenanceTool.exe
 -DCMAKE_GENERATOR:STRING=Ninja
--DQT_QMAKE_EXECUTABLE:FILEPATH=%{Qt:qmakeExecutable}
 -DCMAKE_CXX_FLAGS_INIT:STRING=%{Qt:QML_DEBUG_FLAG}
+-DCMAKE_CXX_COMPILER:FILEPATH=%{Compiler:Executable:Cxx}
+-DCMAKE_C_COMPILER:FILEPATH=%{Compiler:Executable:C}
 -DCMAKE_COLOR_DIAGNOSTICS:BOOL=ON
--DCMAKE_PROJECT_INCLUDE_BEFORE:FILEPATH=%{BuildConfig:BuildDirectory:NativeFilePath}/.qtc/package-manager/auto-setup.cmake</value>
+-DQT_MAINTENANCE_TOOL:FILEPATH=C:/Qt/MaintenanceTool.exe
+-DCMAKE_BUILD_TYPE:STRING=Debug</value>
     <value type="int" key="EnableQmlDebugging">0</value>
     <value type="QString" key="ProjectExplorer.BuildConfiguration.BuildDirectory">C:\Documents\Coding\phototriage_cpp\build\Desktop_Qt_6_9_1_MinGW_64_bit-Debug</value>
     <valuemap type="QVariantMap" key="ProjectExplorer.BuildConfiguration.BuildStepList.0">

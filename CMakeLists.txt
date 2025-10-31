@@ -83,6 +83,9 @@ add_executable(photo_triage_cpp
     src/fileworker.h
     src/rawloader.cpp
     src/rawloader.h
+    src/editorwindow.cpp
+    src/editorwindow.h
+    src/imageadjust.h
     src/appicon.rc
     resources/icons.qrc
 )

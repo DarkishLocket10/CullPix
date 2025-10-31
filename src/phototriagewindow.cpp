@@ -35,6 +35,9 @@
 #include <QSet>
 #include <QQueue>
 
+// Include the editor dialog for basic image adjustments
+#include "editorwindow.h"
+
 // RawLoader provides decoding of RAW photo formats using LibRaw.
 #ifdef HAVE_LIBRAW
 #include "rawloader.h"
@@ -148,11 +151,27 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     connect(m_rejectButton, &QPushButton::clicked, this, &PhotoTriageWindow::handleMoveReject);
     connect(m_undoButton, &QPushButton::clicked, this, &PhotoTriageWindow::undoLastAction);
 
+    // Create the edit button for launching the editor dialog.  Use a
+    // neutral accent colour distinct from keep/reject to avoid
+    // confusion.  The button text includes a mnemonic for the
+    // associated shortcut (E).
+    m_editButton = new QPushButton(tr("Edit (E)"));
+    m_editButton->setStyleSheet("QPushButton { background-color: #457b9d; color: #FFFFFF; "
+                                 "border: none; border-radius: 6px; padding: 8px 16px; "
+                                 "font-weight: 600; } "
+                                 "QPushButton:hover { background-color: #3d6d89; } "
+                                 "QPushButton:pressed { background-color: #325c74; }");
+    connect(m_editButton, &QPushButton::clicked, this, &PhotoTriageWindow::openEditor);
+
     QWidget *toolbarWidget = new QWidget(this);
     QHBoxLayout *hbox = new QHBoxLayout(toolbarWidget);
     hbox->insertWidget(0, m_openButton);
     hbox->setContentsMargins(10, 8, 10, 8);
     hbox->setSpacing(12);
+    // Insert the edit button after the open button and before the
+    // keep/reject/undo buttons.  This ordering follows the typical
+    // workflow: open folder → edit images → keep/reject.
+    hbox->addWidget(m_editButton);
     hbox->addWidget(m_keepButton);
     hbox->addWidget(m_rejectButton);
     hbox->addWidget(m_undoButton);
@@ -175,6 +194,12 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     sReject->setAutoRepeat(false);
     sReject->setContext(Qt::ApplicationShortcut);
     connect(sReject, &QShortcut::activated, this, &PhotoTriageWindow::handleMoveReject);
+
+    // Shortcut for editing the current image: E
+    auto sEdit = new QShortcut(QKeySequence(QStringLiteral("E")), this);
+    sEdit->setAutoRepeat(false);
+    sEdit->setContext(Qt::ApplicationShortcut);
+    connect(sEdit, &QShortcut::activated, this, &PhotoTriageWindow::openEditor);
 
 
     new QShortcut(QKeySequence(QStringLiteral("U")), this, SLOT(undoLastAction()));
@@ -868,6 +893,75 @@ void PhotoTriageWindow::goToPreviousImage()
         m_currentIndex--;
         displayCurrentImage();
         ensurePreloadWindow();
+    }
+}
+
+// Launch the editor dialog for the currently displayed image.  Loads
+// the full‑resolution image (demosaicing RAWs as necessary), opens
+// the EditorWindow, and updates the preview upon acceptance.  Any
+// adjustments are cached so that subsequent visits to the image
+// reflect the changes.  If the image fails to load a warning is
+// displayed.
+void PhotoTriageWindow::openEditor()
+{
+    if (m_currentIndex < 0 || m_currentIndex >= static_cast<int>(m_images.size()))
+        return;
+    const QFileInfo fi = m_images.at(m_currentIndex);
+    QImage fullImage;
+    bool ok = false;
+    // Attempt to load the file.  Prefer a full demosaic for RAW files
+    // to ensure editing fidelity.  For non‑RAW types use QImage::load.
+    // Determine whether the extension suggests a RAW file.
+    auto isRawExtension = [](const QString &ext) {
+        static const QSet<QString> rawExts = {
+            QStringLiteral("arw"), QStringLiteral("cr2"), QStringLiteral("cr3"),
+            QStringLiteral("nef"), QStringLiteral("nrw"), QStringLiteral("raf"),
+            QStringLiteral("rw2"), QStringLiteral("rwl"), QStringLiteral("orf"),
+            QStringLiteral("pef"), QStringLiteral("srw"), QStringLiteral("dng"),
+            QStringLiteral("raw")
+        };
+        return rawExts.contains(ext.toLower());
+    };
+    const QString ext = fi.suffix();
+#ifdef HAVE_LIBRAW
+    bool isRaw = isRawExtension(ext);
+    if (isRaw) {
+        // Attempt full demosaic for editing.  Use full resolution (halfSize=false).
+        QImage rawImg;
+        if (RawLoader::loadDemosaiced(fi.filePath(), rawImg, /*halfSize=*/false)) {
+            fullImage = rawImg;
+            ok = true;
+        }
+    }
+#endif
+    if (!ok) {
+        // Non‑RAW or RAW fallback
+        QImage img(fi.filePath());
+        if (!img.isNull()) {
+            fullImage = img;
+            ok = true;
+        }
+    }
+    if (!ok) {
+        QMessageBox::warning(this, tr("Unable to Edit"), tr("Failed to load image for editing."));
+        return;
+    }
+    // Open the editor.  Use this as parent so the dialog stays on top.
+    EditorWindow editor(fullImage, this);
+    if (editor.exec() == QDialog::Accepted) {
+        // Retrieve the edited image.  Replace the cached preloaded image
+        // and update the display.  This does not overwrite the file on
+        // disk; it only affects the in‑memory preview and thumbnail.
+        QImage edited = editor.editedImage();
+        if (!edited.isNull()) {
+            // Update preloaded cache
+            m_preloaded.insert(fi.absoluteFilePath(), edited);
+            // Update thumbnail cache
+            QPixmap thumb = QPixmap::fromImage(edited.scaled(60, 60, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+            m_thumbnailCache.insert(fi.absoluteFilePath(), thumb);
+            // Refresh current display
+            displayCurrentImage();
+        }
     }
 }
 
