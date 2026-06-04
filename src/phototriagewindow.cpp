@@ -22,6 +22,11 @@
 #include <QShortcut>
 #include <QKeySequence>
 #include <QToolBar>
+#include <QDockWidget>
+#include <QMenuBar>
+#include <QMenu>
+#include <QActionGroup>
+#include <QListView>
 #include <QMessageBox>
 #include <QResizeEvent>
 #include <QCloseEvent>
@@ -105,13 +110,23 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     // high-DPI), pinch / Cmd+wheel / double-click to zoom, 1:1 for real pixels.
     m_imageView = new ImageView(this);
 
-    QSplitter *splitter = new QSplitter(this);
-    splitter->setOrientation(Qt::Horizontal);
-    splitter->addWidget(m_fileListWidget);
-    splitter->addWidget(m_imageView);
-    splitter->setStretchFactor(0, 0);
-    splitter->setStretchFactor(1, 1);
-    setCentralWidget(splitter);
+    setCentralWidget(m_imageView);
+
+    // The timeline (file browser) lives in a dock widget so the user can move
+    // it to any edge, float it as its own window, or hide it — from the View
+    // menu or by dragging. It flips to a horizontal filmstrip when docked
+    // top/bottom (see applyTimelineOrientation).
+    m_timelineDock = new QDockWidget(tr("Timeline"), this);
+    m_timelineDock->setObjectName(QStringLiteral("timelineDock"));
+    m_timelineDock->setWidget(m_fileListWidget);
+    m_timelineDock->setAllowedAreas(Qt::AllDockWidgetAreas);
+    m_timelineDock->setFeatures(QDockWidget::DockWidgetMovable
+                                | QDockWidget::DockWidgetFloatable
+                                | QDockWidget::DockWidgetClosable);
+    addDockWidget(Qt::LeftDockWidgetArea, m_timelineDock);
+    connect(m_timelineDock, &QDockWidget::dockLocationChanged,
+            this, &PhotoTriageWindow::applyTimelineOrientation);
+    applyTimelineOrientation(Qt::LeftDockWidgetArea);
 
     // Status bar
     m_statusBar = statusBar();
@@ -180,11 +195,81 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     hbox->addWidget(m_rejectButton);
     hbox->addWidget(m_undoButton);
     hbox->addStretch(1);
+
+    // Quick show/hide for the timeline, right-aligned on the toolbar.
+    m_timelineButton = new QPushButton(tr("Timeline"));
+    m_timelineButton->setCheckable(true);
+    m_timelineButton->setChecked(true);
+    m_timelineButton->setAutoDefault(false);
+    m_timelineButton->setStyleSheet("QPushButton { background-color: #272b33; color: #FFFFFF; "
+                                     "border: none; border-radius: 6px; padding: 8px 16px; "
+                                     "font-weight: 600; } "
+                                     "QPushButton:checked { background-color: #2A9D8F; } "
+                                     "QPushButton:hover { background-color: #23272e; }");
+    connect(m_timelineButton, &QPushButton::clicked, this,
+            [this]{ m_timelineDock->setVisible(!m_timelineDock->isVisible()); });
+    connect(m_timelineDock, &QDockWidget::visibilityChanged,
+            m_timelineButton, &QPushButton::setChecked);
+    hbox->addWidget(m_timelineButton);
+
     toolbarWidget->setLayout(hbox);
-    QToolBar *tb = new QToolBar(this);
-    tb->setMovable(false);
-    tb->addWidget(toolbarWidget);
-    addToolBar(Qt::BottomToolBarArea, tb);
+    m_toolBar = new QToolBar(this);
+    m_toolBar->setMovable(false);
+    m_toolBar->addWidget(toolbarWidget);
+    addToolBar(Qt::BottomToolBarArea, m_toolBar);
+
+    // ---- Menu bar (native macOS menu; always reachable even when chrome is hidden) ----
+    QMenu *fileMenu = menuBar()->addMenu(tr("File"));
+    QAction *openMenuAct = fileMenu->addAction(tr("Open Folder…"));
+    connect(openMenuAct, &QAction::triggered, this, &PhotoTriageWindow::chooseSourceFolder);
+
+    QMenu *viewMenu = menuBar()->addMenu(tr("View"));
+
+    // Timeline position (Top / Bottom / Left / Right).
+    QMenu *posMenu = viewMenu->addMenu(tr("Timeline Position"));
+    QActionGroup *posGroup = new QActionGroup(this);
+    const struct { const char *label; Qt::DockWidgetArea area; } kPositions[] = {
+        { "Top",    Qt::TopDockWidgetArea },
+        { "Bottom", Qt::BottomDockWidgetArea },
+        { "Left",   Qt::LeftDockWidgetArea },
+        { "Right",  Qt::RightDockWidgetArea },
+    };
+    for (const auto &p : kPositions) {
+        QAction *a = posMenu->addAction(tr(p.label));
+        a->setCheckable(true);
+        posGroup->addAction(a);
+        if (p.area == Qt::LeftDockWidgetArea)
+            a->setChecked(true);
+        const Qt::DockWidgetArea area = p.area;
+        connect(a, &QAction::triggered, this, [this, area]{
+            addDockWidget(area, m_timelineDock);
+            m_timelineDock->show();
+        });
+        m_timelinePosActions.insert(static_cast<int>(area), a);
+    }
+
+    QAction *floatAct = viewMenu->addAction(tr("Timeline in Separate Window"));
+    connect(floatAct, &QAction::triggered, this, [this]{
+        m_timelineDock->setFloating(true);
+        m_timelineDock->show();
+    });
+
+    QAction *showTimelineAct = m_timelineDock->toggleViewAction();
+    showTimelineAct->setText(tr("Show Timeline"));
+    showTimelineAct->setShortcut(QKeySequence(QStringLiteral("T")));
+    viewMenu->addAction(showTimelineAct);
+
+    viewMenu->addSeparator();
+
+    QAction *showButtonsAct = m_toolBar->toggleViewAction();
+    showButtonsAct->setText(tr("Show Buttons"));
+    viewMenu->addAction(showButtonsAct);
+
+    QAction *showInfoAct = viewMenu->addAction(tr("Show Info Bar"));
+    showInfoAct->setCheckable(true);
+    showInfoAct->setChecked(true);
+    connect(showInfoAct, &QAction::toggled, this,
+            [this](bool on){ m_statusBar->setVisible(on); });
 
     // Shortcuts
     // new QShortcut(QKeySequence(QStringLiteral("Z")), this, SLOT(handleMoveKeep()));
@@ -553,6 +638,29 @@ void PhotoTriageWindow::refreshProgress()
         m_countsLabel->clear();
         m_progressBar->hide();
     }
+}
+
+void PhotoTriageWindow::applyTimelineOrientation(Qt::DockWidgetArea area)
+{
+    if (!m_fileListWidget)
+        return;
+    const bool horizontal = (area == Qt::TopDockWidgetArea || area == Qt::BottomDockWidgetArea);
+    if (horizontal) {
+        // Horizontal filmstrip when docked top/bottom.
+        m_fileListWidget->setFlow(QListView::LeftToRight);
+        m_fileListWidget->setWrapping(false);
+        m_fileListWidget->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+        m_fileListWidget->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    } else {
+        // Vertical list when docked left/right or floating.
+        m_fileListWidget->setFlow(QListView::TopToBottom);
+        m_fileListWidget->setWrapping(false);
+        m_fileListWidget->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        m_fileListWidget->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    }
+    // Keep the View-menu position radio in sync when the dock is dragged.
+    if (QAction *a = m_timelinePosActions.value(static_cast<int>(area), nullptr))
+        a->setChecked(true);
 }
 
 int PhotoTriageWindow::indexFromPath(const QString &path) const

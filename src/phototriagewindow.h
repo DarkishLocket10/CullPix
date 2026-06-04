@@ -22,6 +22,8 @@ class ImageLoader;
 class ImageView;
 class QListWidget;
 class QAction;
+class QDockWidget;
+class QToolBar;
 
 // Forward declarations for asynchronous file worker
 struct FileTask;
@@ -88,6 +90,9 @@ private:
     // Refresh the status-bar counts label + progress bar from the kept/rejected
     // counters and the remaining image count.
     void refreshProgress();
+    // Lay the timeline list out as a horizontal filmstrip (top/bottom) or a
+    // vertical list (left/right/floating), and sync the menu's position radio.
+    void applyTimelineOrientation(Qt::DockWidgetArea area);
     static bool naturalLess(const QFileInfo &a, const QFileInfo &b);
 
     QPushButton* m_openButton = nullptr;
@@ -158,10 +163,13 @@ private:
     int m_rejectedCount = 0;  // images sent to discard/ this session
     int m_totalCount = 0;     // image count when the folder was opened
 
-    // Side panel for browsing available images. This list displays
-    // thumbnails and filenames for all images in the current
-    // directory and allows the user to jump directly to any photo.
+    // Side panel ("timeline") for browsing available images, hosted in a dock
+    // widget so it can be moved to any edge, floated, or hidden.
     QListWidget *m_fileListWidget;
+    QDockWidget *m_timelineDock = nullptr;
+    QToolBar *m_toolBar = nullptr;          // bottom button bar (hide-able)
+    QPushButton *m_timelineButton = nullptr; // quick show/hide on the toolbar
+    QHash<int, QAction*> m_timelinePosActions; // dock area -> position radio
 
     // Thumbnail cache keyed by absolute file path. Each entry stores a
     // QPixmap that represents a small preview. Caching prevents
