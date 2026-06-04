@@ -15,6 +15,7 @@
 #include <QQueue>
 
 class QLabel;
+class QProgressBar;
 class QPushButton;
 class QStatusBar;
 class ImageLoader;
@@ -42,6 +43,7 @@ struct MoveAction
     QString originalPath;
     QString destinationPath;
     int index;
+    QString kind;   // "keep" or "discard" — lets undo adjust the right counter
     // Decoded pixels retained so undo can restore the photo instantly without
     // a synchronous re-decode. May be null (e.g. for older entries, see
     // UNDO_IMAGE_RETAIN) in which case undo loads it asynchronously.
@@ -83,6 +85,9 @@ private:
     void ensurePreloadWindow();
     void preloadNext();
     void performMove(const QString &action);
+    // Refresh the status-bar counts label + progress bar from the kept/rejected
+    // counters and the remaining image count.
+    void refreshProgress();
     static bool naturalLess(const QFileInfo &a, const QFileInfo &b);
 
     QPushButton* m_openButton = nullptr;
@@ -145,6 +150,13 @@ private:
     QPushButton *m_keepButton;
     QPushButton *m_rejectButton;
     QPushButton *m_undoButton;
+
+    // Status-bar triage progress.
+    QLabel *m_countsLabel = nullptr;
+    QProgressBar *m_progressBar = nullptr;
+    int m_keptCount = 0;      // images sent to keep/ this session
+    int m_rejectedCount = 0;  // images sent to discard/ this session
+    int m_totalCount = 0;     // image count when the folder was opened
 
     // Side panel for browsing available images. This list displays
     // thumbnails and filenames for all images in the current

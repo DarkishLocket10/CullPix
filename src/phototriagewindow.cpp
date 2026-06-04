@@ -13,6 +13,7 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QStatusBar>
+#include <QProgressBar>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QSplitter>
@@ -46,33 +47,44 @@
 PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     : QMainWindow(parent)
 {
-    setWindowTitle(QStringLiteral("Photo‑Triage"));
+    setWindowTitle(QStringLiteral("CullPix"));
     resize(1000, 700);
 
     QString appStyle = R"(
         QMainWindow {
             background-color: #121212;
             color: #E0E0E0;
-            font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+            font-family: "SF Pro Text", "Helvetica Neue", "Segoe UI", Arial, sans-serif;
             font-size: 14px;
         }
         QStatusBar {
             background-color: #1E1E1E;
-            color: #E0E0E0;
-            border-top: 1px solid #333;
+            color: #B8BCC2;
+            border-top: 1px solid #2C2C2C;
         }
+        QStatusBar::item { border: none; }
         QListWidget {
-            background-color: #1A1A1A; /* someone come get lex luthor lol. */
+            background-color: #1A1A1A;
             color: #CCCCCC;
             border: none;
         }
         QListWidget::item {
             padding: 8px;
-            margin: 0px;
+            margin: 2px 4px;
+            border-radius: 6px;
         }
         QListWidget::item:selected {
             background-color: #264653;
             color: #FFFFFF;
+        }
+        QProgressBar {
+            background-color: #2C2C2C;
+            border: none;
+            border-radius: 3px;
+        }
+        QProgressBar::chunk {
+            background-color: #2A9D8F;
+            border-radius: 3px;
         }
     )";
     qApp->setStyleSheet(appStyle);
@@ -103,6 +115,19 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
 
     // Status bar
     m_statusBar = statusBar();
+    m_statusBar->setSizeGripEnabled(false);
+
+    // Triage progress on the right of the status bar: a counts label and a slim
+    // progress bar (kept + rejected out of the folder's total).
+    m_countsLabel = new QLabel(this);
+    m_countsLabel->setStyleSheet(QStringLiteral("color:#9AA0A6; padding:0 10px;"));
+    m_progressBar = new QProgressBar(this);
+    m_progressBar->setTextVisible(false);
+    m_progressBar->setFixedSize(150, 6);
+    m_progressBar->setRange(0, 1);
+    m_progressBar->setValue(0);
+    m_statusBar->addPermanentWidget(m_countsLabel);
+    m_statusBar->addPermanentWidget(m_progressBar);
 
     // Buttons with contemporary styling. Each button uses a distinct accent
     // color to convey its purpose. A green tone is used for "Keep", a
@@ -187,6 +212,9 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
 
     // Initialise asynchronous file worker
     m_fileWorker = new FileWorker();
+
+    // Show the empty-state prompt until a folder is chosen.
+    displayCurrentImage();
 }
 
 PhotoTriageWindow::~PhotoTriageWindow()
@@ -430,6 +458,9 @@ void PhotoTriageWindow::loadSourceDirectory(const QString &directory)
     m_loading.clear();
     m_fullRequested.clear();
     m_undoStack.clear();
+    m_keptCount = 0;
+    m_rejectedCount = 0;
+    m_totalCount = static_cast<int>(m_images.size());
     m_statusBar->clearMessage();
 
     displayCurrentImage();
@@ -447,8 +478,11 @@ void PhotoTriageWindow::loadSourceDirectory(const QString &directory)
 
 void PhotoTriageWindow::displayCurrentImage()
 {
+    refreshProgress();
     if (m_currentIndex < 0 || m_currentIndex >= static_cast<int>(m_images.size())) {
-        m_imageView->showMessage(tr("No images."));
+        m_imageView->showMessage(tr("No images to cull\n\n"
+                                    "Press O or click “Open Folder” to choose a folder\n\n"
+                                    "Z keep     ·     X reject     ·     U undo     ·     ← → browse"));
         m_statusBar->showMessage(QString());
         // Clear selection in file list when there are no images
         if (m_fileListWidget) {
@@ -489,8 +523,8 @@ void PhotoTriageWindow::displayCurrentImage()
         m_fullRequested.insert(key);
         ldr->start();
     }
-    // Update status bar
-    m_statusBar->showMessage(tr("%1/%2 – %3").arg(m_currentIndex + 1).arg(m_images.size()).arg(fi.fileName()));
+    // Update status bar (filename; counts + progress are shown on the right)
+    m_statusBar->showMessage(fi.fileName());
 
     // Highlight the current item in the side list.  Blocking signals prevents
     // triggering onFileListSelectionChanged recursively.
@@ -499,6 +533,25 @@ void PhotoTriageWindow::displayCurrentImage()
         m_fileListWidget->setCurrentRow(m_currentIndex);
         m_fileListWidget->scrollToItem(m_fileListWidget->currentItem(), QAbstractItemView::PositionAtCenter);
         m_fileListWidget->blockSignals(false);
+    }
+}
+
+void PhotoTriageWindow::refreshProgress()
+{
+    if (!m_countsLabel || !m_progressBar)
+        return;
+    if (m_totalCount > 0) {
+        m_countsLabel->setText(tr("%1 kept    ·    %2 rejected    ·    %3 left")
+                                   .arg(m_keptCount)
+                                   .arg(m_rejectedCount)
+                                   .arg(static_cast<int>(m_images.size())));
+        m_progressBar->setRange(0, m_totalCount);
+        m_progressBar->setValue(m_keptCount + m_rejectedCount);
+        m_countsLabel->show();
+        m_progressBar->show();
+    } else {
+        m_countsLabel->clear();
+        m_progressBar->hide();
     }
 }
 
@@ -708,6 +761,11 @@ void PhotoTriageWindow::performMove(const QString &action)
     actionInfo.originalPath = fi.filePath();
     actionInfo.destinationPath = destPath;
     actionInfo.index = m_currentIndex;
+    actionInfo.kind = action;
+    if (action == QLatin1String("keep"))
+        ++m_keptCount;
+    else
+        ++m_rejectedCount;
     // Retain the already-decoded image (and whether it was full quality) so
     // undo can restore it instantly, skipping the synchronous re-decode that
     // used to freeze the UI.
@@ -794,6 +852,11 @@ void PhotoTriageWindow::undoLastAction()
     }
     MoveAction action = m_undoStack.back();
     m_undoStack.pop_back();
+    // Reverse the kept/rejected tally for this action.
+    if (action.kind == QLatin1String("keep"))
+        m_keptCount = qMax(0, m_keptCount - 1);
+    else
+        m_rejectedCount = qMax(0, m_rejectedCount - 1);
     // Undo the move: if the move has not yet been processed by the
     // background worker, cancel the pending task.  Otherwise move
     // the file back from its destination to the original location.
