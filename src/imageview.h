@@ -36,6 +36,9 @@ protected:
     void wheelEvent(QWheelEvent *event) override;
     bool viewportEvent(QEvent *event) override;            // trackpad pinch
     void mouseDoubleClickEvent(QMouseEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;     // start drag-to-pan
+    void mouseMoveEvent(QMouseEvent *event) override;      // pan while dragging
+    void mouseReleaseEvent(QMouseEvent *event) override;   // end drag-to-pan
     void keyPressEvent(QKeyEvent *event) override;
 
 private:
@@ -50,4 +53,6 @@ private:
     QGraphicsPixmapItem *m_item = nullptr;
     QLabel              *m_overlay = nullptr;   // centered message text
     bool                 m_fitMode = true;
+    bool                 m_panning = false;     // mid drag-to-pan
+    QPoint               m_panLast;             // last cursor pos while panning
 };

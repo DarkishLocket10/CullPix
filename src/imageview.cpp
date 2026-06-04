@@ -24,8 +24,12 @@ ImageView::ImageView(QWidget *parent)
 
     setFrameShape(QFrame::NoFrame);
     setAlignment(Qt::AlignCenter);
-    // Left-drag pans when zoomed in; harmless at fit.
-    setDragMode(QGraphicsView::ScrollHandDrag);
+    // Pan is handled manually (mousePress/Move/Release) rather than via
+    // ScrollHandDrag: that mode forces a grab cursor across the whole view up
+    // to the window edge, which suppresses the OS resize cursor there. With
+    // NoDrag the view keeps a normal cursor on hover (so edges show the resize
+    // cursor) and shows the grab cursor only while actively dragging.
+    setDragMode(QGraphicsView::NoDrag);
     // We anchor zoom manually (see zoomBy) off each event's cursor position,
     // so no transformation anchor is needed; resizing keeps the view centered.
     setTransformationAnchor(QGraphicsView::NoAnchor);
@@ -189,6 +193,47 @@ void ImageView::mouseDoubleClickEvent(QMouseEvent *event)
         fitToWindow();
     }
     event->accept();
+}
+
+void ImageView::mousePressEvent(QMouseEvent *event)
+{
+    // Begin a drag-to-pan. The grab cursor is shown only now (not on hover),
+    // so a plain hover keeps the normal cursor and the OS resize cursor can
+    // appear at the window edges.
+    if (event->button() == Qt::LeftButton && m_item) {
+        m_panning = true;
+        m_panLast = event->position().toPoint();
+        viewport()->setCursor(Qt::ClosedHandCursor);
+        event->accept();
+        return;
+    }
+    QGraphicsView::mousePressEvent(event);
+}
+
+void ImageView::mouseMoveEvent(QMouseEvent *event)
+{
+    if (m_panning) {
+        const QPoint p = event->position().toPoint();
+        const QPoint d = p - m_panLast;
+        m_panLast = p;
+        // No-op at fit (scrollbars have no range); pans once zoomed in.
+        horizontalScrollBar()->setValue(horizontalScrollBar()->value() - d.x());
+        verticalScrollBar()->setValue(verticalScrollBar()->value() - d.y());
+        event->accept();
+        return;
+    }
+    QGraphicsView::mouseMoveEvent(event);
+}
+
+void ImageView::mouseReleaseEvent(QMouseEvent *event)
+{
+    if (m_panning && event->button() == Qt::LeftButton) {
+        m_panning = false;
+        viewport()->unsetCursor();
+        event->accept();
+        return;
+    }
+    QGraphicsView::mouseReleaseEvent(event);
 }
 
 void ImageView::keyPressEvent(QKeyEvent *event)
