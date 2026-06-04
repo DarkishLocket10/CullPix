@@ -1,0 +1,17 @@
+# Build output
+/build/
+build/
+out/build/
+
+# macOS
+.DS_Store
+
+# Qt / CMake user files
+CMakeLists.txt.user*
+*.autosave
+CMakeCache.txt
+CMakeFiles/
+
+# IDE
+.idea/
+.vscode/
