@@ -27,6 +27,7 @@
 #include <QMenu>
 #include <QActionGroup>
 #include <QListView>
+#include <QSlider>
 #include <QMessageBox>
 #include <QResizeEvent>
 #include <QCloseEvent>
@@ -99,10 +100,13 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     // left pane shows a thumbnail list of images; the right pane displays
     // the currently selected photo.
     m_fileListWidget = new QListWidget(this);
-    m_fileListWidget->setViewMode(QListView::ListMode);
-    m_fileListWidget->setIconSize(QSize(80, 80));
-    m_fileListWidget->setUniformItemSizes(false);
+    m_fileListWidget->setViewMode(QListView::IconMode);      // grid of thumbnails
+    m_fileListWidget->setMovement(QListView::Static);        // no drag-rearrange
+    m_fileListWidget->setResizeMode(QListView::Adjust);      // re-flow the grid on resize
+    m_fileListWidget->setUniformItemSizes(true);
     m_fileListWidget->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_fileListWidget->setIconSize(QSize(96, 96));
+    m_fileListWidget->setGridSize(QSize(116, 132));
     connect(m_fileListWidget, &QListWidget::currentRowChanged,
             this, &PhotoTriageWindow::onFileListSelectionChanged);
 
@@ -113,20 +117,48 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     setCentralWidget(m_imageView);
 
     // The timeline (file browser) lives in a dock widget so the user can move
-    // it to any edge, float it as its own window, or hide it — from the View
-    // menu or by dragging. It flips to a horizontal filmstrip when docked
-    // top/bottom (see applyTimelineOrientation).
+    // it to any edge, float it as its own window, or hide it. It lays photos
+    // out as a wrapping grid (or a single-row filmstrip when docked top/bottom)
+    // and carries a thumbnail-size slider that travels with it when floated.
     m_timelineDock = new QDockWidget(tr("Timeline"), this);
     m_timelineDock->setObjectName(QStringLiteral("timelineDock"));
-    m_timelineDock->setWidget(m_fileListWidget);
     m_timelineDock->setAllowedAreas(Qt::AllDockWidgetAreas);
     m_timelineDock->setFeatures(QDockWidget::DockWidgetMovable
                                 | QDockWidget::DockWidgetFloatable
                                 | QDockWidget::DockWidgetClosable);
+
+    QWidget *timelinePanel = new QWidget;
+    QVBoxLayout *tlLayout = new QVBoxLayout(timelinePanel);
+    tlLayout->setContentsMargins(0, 0, 0, 0);
+    tlLayout->setSpacing(0);
+    tlLayout->addWidget(m_fileListWidget, 1);
+
+    QWidget *sizeBar = new QWidget;
+    QHBoxLayout *sizeRow = new QHBoxLayout(sizeBar);
+    sizeRow->setContentsMargins(8, 4, 8, 4);
+    QLabel *sizeLabel = new QLabel(tr("Size"));
+    sizeLabel->setStyleSheet(QStringLiteral("color:#9AA0A6;"));
+    m_thumbSlider = new QSlider(Qt::Horizontal);
+    m_thumbSlider->setRange(64, THUMB_PX);
+    m_thumbSlider->setValue(96);
+    m_thumbSlider->setToolTip(tr("Thumbnail size"));
+    connect(m_thumbSlider, &QSlider::valueChanged, this, [this](int v) {
+        m_fileListWidget->setIconSize(QSize(v, v));
+        m_fileListWidget->setGridSize(QSize(v + 20, v + 36));
+    });
+    sizeRow->addWidget(sizeLabel);
+    sizeRow->addWidget(m_thumbSlider, 1);
+    tlLayout->addWidget(sizeBar);
+    m_timelineDock->setWidget(timelinePanel);
+
     addDockWidget(Qt::LeftDockWidgetArea, m_timelineDock);
+    // Re-dock instead of hiding when the floating timeline window is closed.
+    m_timelineDock->installEventFilter(this);
     connect(m_timelineDock, &QDockWidget::dockLocationChanged,
-            this, &PhotoTriageWindow::applyTimelineOrientation);
-    applyTimelineOrientation(Qt::LeftDockWidgetArea);
+            this, &PhotoTriageWindow::updateTimelineLayout);
+    connect(m_timelineDock, &QDockWidget::topLevelChanged,
+            this, &PhotoTriageWindow::updateTimelineLayout);
+    updateTimelineLayout();
 
     // Status bar
     m_statusBar = statusBar();
@@ -223,7 +255,7 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     QAction *openMenuAct = fileMenu->addAction(tr("Open Folder…"));
     connect(openMenuAct, &QAction::triggered, this, &PhotoTriageWindow::chooseSourceFolder);
 
-    QMenu *viewMenu = menuBar()->addMenu(tr("View"));
+    QMenu *viewMenu = menuBar()->addMenu(tr("Options"));
 
     // Timeline position (Top / Bottom / Left / Right).
     QMenu *posMenu = viewMenu->addMenu(tr("Timeline Position"));
@@ -270,6 +302,30 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     showInfoAct->setChecked(true);
     connect(showInfoAct, &QAction::toggled, this,
             [this](bool on){ m_statusBar->setVisible(on); });
+
+    // Thumbnail size presets (the timeline's slider gives fine control).
+    QMenu *sizeMenu = viewMenu->addMenu(tr("Thumbnail Size"));
+    const struct { const char *label; int px; } kSizes[] = {
+        { "Small", 72 }, { "Medium", 104 }, { "Large", 150 },
+    };
+    for (const auto &s : kSizes) {
+        const int px = s.px;
+        sizeMenu->addAction(tr(s.label), this, [this, px]{
+            if (m_thumbSlider) m_thumbSlider->setValue(px);
+        });
+    }
+
+    // In-window "Options" button on the toolbar pops up this same menu, so all
+    // the settings are reachable without going to the macOS menu bar.
+    QPushButton *optionsButton = new QPushButton(tr("Options ▾"));
+    optionsButton->setAutoDefault(false);
+    optionsButton->setMenu(viewMenu);
+    optionsButton->setStyleSheet("QPushButton { background-color: #272b33; color: #FFFFFF; "
+                                 "border: none; border-radius: 6px; padding: 8px 16px; "
+                                 "font-weight: 600; } "
+                                 "QPushButton:hover { background-color: #23272e; } "
+                                 "QPushButton::menu-indicator { width: 0px; }");
+    hbox->addWidget(optionsButton);
 
     // Shortcuts
     // new QShortcut(QKeySequence(QStringLiteral("Z")), this, SLOT(handleMoveKeep()));
@@ -640,27 +696,43 @@ void PhotoTriageWindow::refreshProgress()
     }
 }
 
-void PhotoTriageWindow::applyTimelineOrientation(Qt::DockWidgetArea area)
+void PhotoTriageWindow::updateTimelineLayout()
 {
-    if (!m_fileListWidget)
+    if (!m_fileListWidget || !m_timelineDock)
         return;
-    const bool horizontal = (area == Qt::TopDockWidgetArea || area == Qt::BottomDockWidgetArea);
-    if (horizontal) {
-        // Horizontal filmstrip when docked top/bottom.
-        m_fileListWidget->setFlow(QListView::LeftToRight);
-        m_fileListWidget->setWrapping(false);
+    const bool floating = m_timelineDock->isFloating();
+    const Qt::DockWidgetArea area = dockWidgetArea(m_timelineDock);
+    // Single-row filmstrip when docked top/bottom; a wrapping grid otherwise
+    // (left/right docks and the floating window) so widening lays out a grid.
+    const bool filmstrip = !floating
+        && (area == Qt::TopDockWidgetArea || area == Qt::BottomDockWidgetArea);
+    m_fileListWidget->setFlow(QListView::LeftToRight);
+    m_fileListWidget->setWrapping(!filmstrip);
+    if (filmstrip) {
         m_fileListWidget->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
         m_fileListWidget->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     } else {
-        // Vertical list when docked left/right or floating.
-        m_fileListWidget->setFlow(QListView::TopToBottom);
-        m_fileListWidget->setWrapping(false);
         m_fileListWidget->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
         m_fileListWidget->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     }
-    // Keep the View-menu position radio in sync when the dock is dragged.
-    if (QAction *a = m_timelinePosActions.value(static_cast<int>(area), nullptr))
-        a->setChecked(true);
+    // Keep the Options-menu position radio in sync when the dock is dragged.
+    if (!floating) {
+        if (QAction *a = m_timelinePosActions.value(static_cast<int>(area), nullptr))
+            a->setChecked(true);
+    }
+}
+
+bool PhotoTriageWindow::eventFilter(QObject *obj, QEvent *event)
+{
+    // Closing the floating timeline window re-docks it instead of hiding it.
+    if (obj == m_timelineDock && event->type() == QEvent::Close
+        && m_timelineDock->isFloating()) {
+        m_timelineDock->setFloating(false);
+        m_timelineDock->show();
+        event->ignore();
+        return true;
+    }
+    return QMainWindow::eventFilter(obj, event);
 }
 
 int PhotoTriageWindow::indexFromPath(const QString &path) const
@@ -784,7 +856,7 @@ void PhotoTriageWindow::startNextThumbnailLoader()
         if (m_thumbnailCache.contains(path) || m_thumbLoadingPaths.contains(path))
             continue;
         // Launch loader
-        ImageLoader *ldr = new ImageLoader(index, path, this, QSize(60, 60));
+        ImageLoader *ldr = new ImageLoader(index, path, this, QSize(THUMB_PX, THUMB_PX));
         connect(ldr, &ImageLoader::loaded,
                 this, &PhotoTriageWindow::onThumbnailLoaded,
                 Qt::QueuedConnection);

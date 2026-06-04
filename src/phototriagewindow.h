@@ -24,6 +24,8 @@ class QListWidget;
 class QAction;
 class QDockWidget;
 class QToolBar;
+class QSlider;
+class QMenu;
 
 // Forward declarations for asynchronous file worker
 struct FileTask;
@@ -64,6 +66,8 @@ protected:
 
     void resizeEvent(QResizeEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
+    // Re-dock the timeline (instead of hiding) when its floating window is closed.
+    bool eventFilter(QObject *obj, QEvent *event) override;
 
 private slots:
     void chooseSourceFolder();
@@ -90,9 +94,9 @@ private:
     // Refresh the status-bar counts label + progress bar from the kept/rejected
     // counters and the remaining image count.
     void refreshProgress();
-    // Lay the timeline list out as a horizontal filmstrip (top/bottom) or a
-    // vertical list (left/right/floating), and sync the menu's position radio.
-    void applyTimelineOrientation(Qt::DockWidgetArea area);
+    // Lay the timeline list out as a single-row filmstrip (docked top/bottom)
+    // or a wrapping grid (left/right/floating), and sync the position radio.
+    void updateTimelineLayout();
     static bool naturalLess(const QFileInfo &a, const QFileInfo &b);
 
     QPushButton* m_openButton = nullptr;
@@ -169,6 +173,7 @@ private:
     QDockWidget *m_timelineDock = nullptr;
     QToolBar *m_toolBar = nullptr;          // bottom button bar (hide-able)
     QPushButton *m_timelineButton = nullptr; // quick show/hide on the toolbar
+    QSlider *m_thumbSlider = nullptr;        // thumbnail-size control in the dock
     QHash<int, QAction*> m_timelinePosActions; // dock area -> position radio
 
     // Thumbnail cache keyed by absolute file path. Each entry stores a
@@ -195,6 +200,8 @@ private:
     // this number small prevents CPU and I/O saturation while still
     // populating thumbnails quickly in the background.
     static constexpr int MAX_THUMB_CONCURRENCY = 3;
+    // Thumbnails decode at this size so the zoomable grid stays crisp.
+    static constexpr int THUMB_PX = 160;
 
     // Kick off asynchronous thumbnail loading for any images that lack
     // cached thumbnails. Populates m_thumbPending and starts up to
