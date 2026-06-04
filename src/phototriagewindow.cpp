@@ -7,6 +7,7 @@
 
 #include "phototriagewindow.h"
 #include "imageloader.h"
+#include "imageview.h"
 #include "fileworker.h"
 
 #include <QLabel>
@@ -35,10 +36,8 @@
 #include <QSet>
 #include <QQueue>
 
-// RawLoader provides decoding of RAW photo formats using LibRaw.
-#ifdef HAVE_LIBRAW
-#include "rawloader.h"
-#endif
+// RAW decoding is handled entirely on the worker thread by ImageLoader, so
+// this translation unit no longer needs RawLoader directly.
 #include <cctype>
 #include <QVector>
 
@@ -90,15 +89,14 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     connect(m_fileListWidget, &QListWidget::currentRowChanged,
             this, &PhotoTriageWindow::onFileListSelectionChanged);
 
-    m_imageLabel = new QLabel(this);
-    m_imageLabel->setAlignment(Qt::AlignCenter);
-    m_imageLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    m_imageLabel->setStyleSheet("background-color: #111111; color: #E0E0E0;");
+    // Zoomable/pannable image view: renders at physical pixels (sharp on
+    // high-DPI), pinch / Cmd+wheel / double-click to zoom, 1:1 for real pixels.
+    m_imageView = new ImageView(this);
 
     QSplitter *splitter = new QSplitter(this);
     splitter->setOrientation(Qt::Horizontal);
     splitter->addWidget(m_fileListWidget);
-    splitter->addWidget(m_imageLabel);
+    splitter->addWidget(m_imageView);
     splitter->setStretchFactor(0, 0);
     splitter->setStretchFactor(1, 1);
     setCentralWidget(splitter);
@@ -204,7 +202,8 @@ PhotoTriageWindow::~PhotoTriageWindow()
 void PhotoTriageWindow::resizeEvent(QResizeEvent *event)
 {
     QMainWindow::resizeEvent(event);
-    displayCurrentImage();
+    // The image view re-fits itself on resize (see ImageView::resizeEvent),
+    // so there's no need to rebuild the whole display here.
 }
 
 void PhotoTriageWindow::closeEvent(QCloseEvent *event)
@@ -428,6 +427,8 @@ void PhotoTriageWindow::loadSourceDirectory(const QString &directory)
 
     // Reset state
     m_preloaded.clear();
+    m_loading.clear();
+    m_fullRequested.clear();
     m_undoStack.clear();
     m_statusBar->clearMessage();
 
@@ -447,8 +448,7 @@ void PhotoTriageWindow::loadSourceDirectory(const QString &directory)
 void PhotoTriageWindow::displayCurrentImage()
 {
     if (m_currentIndex < 0 || m_currentIndex >= static_cast<int>(m_images.size())) {
-        m_imageLabel->clear();
-        m_imageLabel->setText(tr("No images."));
+        m_imageView->showMessage(tr("No images."));
         m_statusBar->showMessage(QString());
         // Clear selection in file list when there are no images
         if (m_fileListWidget) {
@@ -459,51 +459,35 @@ void PhotoTriageWindow::displayCurrentImage()
         return;
     }
     const QFileInfo &fi = m_images.at(m_currentIndex);
-    QImage image;
     const QString key = fi.absoluteFilePath();
-    // Use preloaded image if available.  Do not remove it from the cache
-    // here; the sliding window in ensurePreloadWindow() manages eviction.  If
-    // the image is not cached, load it synchronously.  Keeping cached
-    // images intact allows rapid back‑and‑forth navigation with minimal
-    // disk I/O.
+
+    // Show the best image we have right now — a full-quality decode, a fast RAW
+    // preview (to be upgraded below), or the thumbnail / a "Loading…" message as
+    // an instant placeholder. The view renders at physical pixels and supports
+    // pinch / 1:1 zoom. We never evict here; ensurePreloadWindow() manages the
+    // sliding window, which keeps back-and-forth navigation (and undo) instant.
     if (m_preloaded.contains(key)) {
-        image = m_preloaded.value(key);
+        m_imageView->setImage(m_preloaded.value(key).image);
+    } else if (m_thumbnailCache.contains(key)) {
+        m_imageView->setImage(m_thumbnailCache.value(key).toImage());
     } else {
-        // Attempt to synchronously load the image.  We try Qt’s loader first;
-        // if that fails and the file is a RAW, fall back to RawLoader.
-        // This mirrors the logic used in ImageLoader but runs on the UI thread.
-        if (!image.load(fi.filePath())) {
-#ifdef HAVE_LIBRAW
-            // Determine whether the extension suggests a RAW file
-            auto isRawExtension = [](const QString &ext) {
-                static const QSet<QString> rawExts = {
-                    QStringLiteral("arw"), QStringLiteral("cr2"), QStringLiteral("cr3"),
-                    QStringLiteral("nef"), QStringLiteral("nrw"), QStringLiteral("raf"),
-                    QStringLiteral("rw2"), QStringLiteral("rwl"), QStringLiteral("orf"),
-                    QStringLiteral("pef"), QStringLiteral("srw"), QStringLiteral("dng"),
-                    QStringLiteral("raw")
-                };
-                return rawExts.contains(ext.toLower());
-            };
-            const QString ext = fi.suffix();
-            if (isRawExtension(ext)) {
-                QImage rawImg;
-                // Try embedded preview first; if that fails use demosaic (half size).
-                if (RawLoader::loadEmbeddedPreview(fi.filePath(), rawImg) ||
-                    RawLoader::loadDemosaiced(fi.filePath(), rawImg, true)) {
-                    image = rawImg;
-                }
-            }
-#endif
-        }
+        m_imageView->showMessage(tr("Loading…"));
     }
-    QPixmap pixmap = QPixmap::fromImage(image);
-    if (!pixmap.isNull()) {
-        QPixmap scaled = pixmap.scaled(m_imageLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
-        m_imageLabel->setPixmap(scaled);
-        m_imageLabel->setText(QString());
-    } else {
-        m_imageLabel->setText(tr("Unable to load image"));
+
+    // Ensure the *current* image reaches full display quality: a full-resolution
+    // decode (JPEG) or full demosaic (RAW), off the UI thread, swapped in by
+    // onImagePreloaded(). This runs for a cache miss and for a cached fast RAW
+    // preview alike — but only ever for the image being viewed, never the
+    // prefetch ring (so a RAW folder won't fire many concurrent demosaics).
+    const bool haveFull = m_preloaded.contains(key) && m_preloaded.value(key).full;
+    if (!haveFull && !m_fullRequested.contains(key)) {
+        ImageLoader *ldr = new ImageLoader(m_currentIndex, key, this, QSize(), /*fullQuality=*/true);
+        connect(ldr, &ImageLoader::loaded,
+                this, &PhotoTriageWindow::onImagePreloaded,
+                Qt::QueuedConnection);
+        connect(ldr, &QThread::finished, ldr, &QObject::deleteLater);
+        m_fullRequested.insert(key);
+        ldr->start();
     }
     // Update status bar
     m_statusBar->showMessage(tr("%1/%2 – %3").arg(m_currentIndex + 1).arg(m_images.size()).arg(fi.fileName()));
@@ -548,13 +532,13 @@ void PhotoTriageWindow::ensurePreloadWindow()
     // Preload ahead within the forward window
     for (int i = m_currentIndex + 1; i <= m_currentIndex + PRELOAD_DEPTH && i < m_images.size(); ++i) {
         const QString key = m_images.at(i).absoluteFilePath();
-        if (m_preloaded.contains(key) || m_loading.contains(i)) continue;
-        ImageLoader *ldr = new ImageLoader(i, key, this);
+        if (m_preloaded.contains(key) || m_loading.contains(key)) continue;
+        ImageLoader *ldr = new ImageLoader(i, key, this, QSize(), /*fullQuality=*/false);
         connect(ldr, &ImageLoader::loaded,
                 this,  &PhotoTriageWindow::onImagePreloaded,
                 Qt::QueuedConnection);
         connect(ldr, &QThread::finished, ldr, &QObject::deleteLater);
-        m_loading.insert(i);
+        m_loading.insert(key);
         ldr->start();
     }
     // Optionally preload a small number of images behind the current one to
@@ -562,24 +546,39 @@ void PhotoTriageWindow::ensurePreloadWindow()
     // indices if not already cached or loading.
     for (int i = m_currentIndex - 1; i >= m_currentIndex - PRELOAD_BACK_DEPTH && i >= 0; --i) {
         const QString key = m_images.at(i).absoluteFilePath();
-        if (m_preloaded.contains(key) || m_loading.contains(i)) continue;
-        ImageLoader *ldr = new ImageLoader(i, key, this);
+        if (m_preloaded.contains(key) || m_loading.contains(key)) continue;
+        ImageLoader *ldr = new ImageLoader(i, key, this, QSize(), /*fullQuality=*/false);
         connect(ldr, &ImageLoader::loaded,
                 this,  &PhotoTriageWindow::onImagePreloaded,
                 Qt::QueuedConnection);
         connect(ldr, &QThread::finished, ldr, &QObject::deleteLater);
-        m_loading.insert(i);
+        m_loading.insert(key);
         ldr->start();
     }
 }
 
 
-void PhotoTriageWindow::onImagePreloaded(int index, const QString &path, const QImage &image)
+void PhotoTriageWindow::onImagePreloaded(int index, const QString &path, const QImage &image, bool fullQuality)
 {
-    // Store preloaded image in cache keyed by its absolute path.
-    m_preloaded.insert(path, image);
-    // Remove from loading set by index if present
-    m_loading.remove(index);
+    Q_UNUSED(index);
+    // Store in the cache keyed by absolute path. Never downgrade: a fast RAW
+    // preview must not overwrite a full-quality image already cached.
+    const bool haveFull = m_preloaded.contains(path) && m_preloaded.value(path).full;
+    if (fullQuality) {
+        m_preloaded.insert(path, CachedImage{image, true});
+        m_fullRequested.remove(path);
+    } else if (!haveFull) {
+        m_preloaded.insert(path, CachedImage{image, false});
+    }
+    // Clear the prefetch in-flight marker for this path.
+    m_loading.remove(path);
+    // If this is the image on screen — a fast preview just arrived, the
+    // full-quality upgrade finished, or an un-cached photo was undone — show it
+    // now. displayCurrentImage() also re-requests full quality if still needed.
+    if (m_currentIndex >= 0 && m_currentIndex < static_cast<int>(m_images.size())
+        && m_images.at(m_currentIndex).absoluteFilePath() == path) {
+        displayCurrentImage();
+    }
     ensurePreloadWindow();
 }
 
@@ -709,9 +708,20 @@ void PhotoTriageWindow::performMove(const QString &action)
     actionInfo.originalPath = fi.filePath();
     actionInfo.destinationPath = destPath;
     actionInfo.index = m_currentIndex;
+    // Retain the already-decoded image (and whether it was full quality) so
+    // undo can restore it instantly, skipping the synchronous re-decode that
+    // used to freeze the UI.
+    const CachedImage cached = m_preloaded.value(fi.absoluteFilePath());
+    actionInfo.image = cached.image;
+    actionInfo.imageFull = cached.full;
     m_undoStack.push_back(actionInfo);
     if (static_cast<int>(m_undoStack.size()) > MAX_UNDO) {
         m_undoStack.pop_front();
+    }
+    // Bound memory: keep decoded pixels only for the most recent moves. Deeper
+    // undos fall back to a fast async load via displayCurrentImage().
+    for (int i = 0; i < static_cast<int>(m_undoStack.size()) - UNDO_IMAGE_RETAIN; ++i) {
+        m_undoStack[i].image = QImage();
     }
     // Remove from list
     int removedIndex = m_currentIndex;
@@ -723,8 +733,10 @@ void PhotoTriageWindow::performMove(const QString &action)
     // Remove the cache entry for the file that is being removed
     const QString removedKey = fi.absoluteFilePath();
     m_preloaded.remove(removedKey);
-    // Remove the thumbnail cache entry as well and reset thumbnail loading
-    m_thumbnailCache.remove(removedKey);
+    m_loading.remove(removedKey);
+    m_fullRequested.remove(removedKey);
+    // Keep the thumbnail cached: the file content is unchanged, so if this
+    // image is restored via undo the list row shows its real icon immediately.
     // Update the file list widget: remove the corresponding item instead of
     // rebuilding the entire list.  This keeps UI interactions snappy by
     // avoiding unnecessary iterations.  Guard against null pointer just in case.
@@ -813,16 +825,28 @@ void PhotoTriageWindow::undoLastAction()
     m_images.insert(m_images.begin() + insertIndex, QFileInfo(action.originalPath));
     // Update current index
     m_currentIndex = insertIndex;
-    // Remove any cached entry for this image so it will be reloaded or re‑preloaded as needed
-    m_preloaded.remove(action.originalPath);
-    // Also clear any existing thumbnail for this path so a fresh one will be generated
-    m_thumbnailCache.remove(action.originalPath);
+    // Re-seed the decoded image (if still retained) so the restored photo
+    // paints instantly with no synchronous decode. Key by absolute path to
+    // match the lookup in displayCurrentImage(). If we no longer hold the
+    // pixels, drop any stale entry and let displayCurrentImage() load it
+    // asynchronously (placeholder first, no UI freeze).
+    const QString restoredKey = m_images.at(m_currentIndex).absoluteFilePath();
+    if (!action.image.isNull())
+        m_preloaded.insert(restoredKey, CachedImage{action.image, action.imageFull});
+    else
+        m_preloaded.remove(restoredKey);
+    // Clear any stale in-flight markers so displayCurrentImage() can re-request
+    // a full-quality decode if the retained copy was only a fast RAW preview.
+    m_loading.remove(restoredKey);
+    m_fullRequested.remove(restoredKey);
+    // The thumbnail is kept (file content is unchanged) so the restored row
+    // can show its real icon immediately rather than a generic placeholder.
     // Insert the restored entry into the file list widget instead of rebuilding all items.
     if (m_fileListWidget) {
         static QFileIconProvider iconProvider;
         QListWidgetItem *newItem = new QListWidgetItem();
         newItem->setText(QFileInfo(action.originalPath).fileName());
-        const QString opath = action.originalPath;
+        const QString opath = restoredKey;   // absolute path, matches cache keys
         if (m_thumbnailCache.contains(opath)) {
             newItem->setIcon(QIcon(m_thumbnailCache.value(opath)));
         } else {

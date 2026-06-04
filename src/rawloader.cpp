@@ -3,6 +3,7 @@
 #include <libraw/libraw.h>
 #include <QImage>
 #include <QByteArray>
+#include <cstring>   // memcpy
 
 static QImage qimageFromMemImage(const libraw_processed_image_t* img)
 {

@@ -15,6 +15,11 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Build the macOS target as a relocatable .app bundle (used by the CI release
+# packaging, which runs macdeployqt + builds a .dmg). Off by default so local
+# dev builds stay a plain, quick-to-launch executable.
+option(CULLPIX_MACOS_BUNDLE "Build the macOS target as an .app bundle" OFF)
+
 # -------- Qt & Threads --------
 find_package(Qt6 REQUIRED COMPONENTS Widgets)
 find_package(Threads REQUIRED)
@@ -39,29 +44,26 @@ elseif (TARGET unofficial::libraw::libraw)
     set(HAVE_LIBRAW TRUE)
     set(LIBRAW_LINK_TARGET unofficial::libraw::libraw)
 else()
-    # Fallbacks: pkg-config or manual
+    # Resolve LibRaw via cached find_path/find_library. Unlike
+    # pkg_check_modules' convenience variables (which can go empty on a cached
+    # reconfigure and silently drop libraw from the compile/link line), the
+    # find_* cache entries persist across reconfigures. pkg-config, when
+    # present, only supplies search hints; CMAKE_PREFIX_PATH covers Homebrew.
     find_package(PkgConfig QUIET)
     if (PkgConfig_FOUND)
-        pkg_check_modules(LIBRAW QUIET libraw)
-        if (LIBRAW_FOUND)
-            message(STATUS "Found LibRaw via pkg-config")
-            set(HAVE_LIBRAW TRUE)
-            # pkg-config gives include dirs & libs below
-            set(LIBRAW_INCLUDE_DIRS ${LIBRAW_INCLUDE_DIRS})
-            set(LIBRAW_LIBRARIES    ${LIBRAW_LIBRARIES})
-        endif()
+        pkg_check_modules(PC_LIBRAW QUIET libraw)
     endif()
-
-    if (NOT HAVE_LIBRAW)
-        # Manual search as a last resort
-        find_path(LIBRAW_INCLUDE_DIR libraw/libraw.h)
-        find_library(LIBRAW_LIBRARY NAMES raw libraw)
-        if (LIBRAW_INCLUDE_DIR AND LIBRAW_LIBRARY)
-            message(STATUS "Found LibRaw via manual search")
-            set(HAVE_LIBRAW TRUE)
-            set(LIBRAW_INCLUDE_DIRS ${LIBRAW_INCLUDE_DIR})
-            set(LIBRAW_LIBRARIES    ${LIBRAW_LIBRARY})
-        endif()
+    find_path(LIBRAW_INCLUDE_DIR
+        NAMES libraw/libraw.h
+        HINTS ${PC_LIBRAW_INCLUDEDIR} ${PC_LIBRAW_INCLUDE_DIRS})
+    find_library(LIBRAW_LIBRARY
+        NAMES raw libraw
+        HINTS ${PC_LIBRAW_LIBDIR} ${PC_LIBRAW_LIBRARY_DIRS})
+    if (LIBRAW_INCLUDE_DIR AND LIBRAW_LIBRARY)
+        message(STATUS "Found LibRaw: ${LIBRAW_LIBRARY}")
+        set(HAVE_LIBRAW TRUE)
+        set(LIBRAW_INCLUDE_DIRS ${LIBRAW_INCLUDE_DIR})
+        set(LIBRAW_LIBRARIES    ${LIBRAW_LIBRARY})
     endif()
 endif()
 
@@ -73,19 +75,34 @@ if (NOT HAVE_LIBRAW)
 endif()
 
 # -------- Sources --------
+# Windows-only resource script (icon). Ignored on other platforms.
+set(PLATFORM_SOURCES "")
+if (WIN32)
+    list(APPEND PLATFORM_SOURCES src/appicon.rc)
+endif()
+
 add_executable(photo_triage_cpp
     src/main.cpp
     src/phototriagewindow.cpp
     src/phototriagewindow.h
     src/imageloader.cpp
     src/imageloader.h
+    src/imageview.cpp
+    src/imageview.h
     src/fileworker.cpp
     src/fileworker.h
     src/rawloader.cpp
     src/rawloader.h
-    src/appicon.rc
+    ${PLATFORM_SOURCES}
     resources/icons.qrc
 )
+
+# Package as a macOS .app bundle only when requested (CI). macdeployqt then
+# bundles the Qt frameworks + image-format plugins so the app runs on machines
+# without Qt installed.
+if (APPLE AND CULLPIX_MACOS_BUNDLE)
+    set_target_properties(photo_triage_cpp PROPERTIES MACOSX_BUNDLE TRUE)
+endif()
 
 # -------- Link libraries --------
 target_link_libraries(photo_triage_cpp
@@ -94,9 +111,9 @@ target_link_libraries(photo_triage_cpp
 )
 
 # Link LibRaw once, after the target exists
-if (LIBRAW_LINK_TARGET)  # imported target (CMake config)
+if (LIBRAW_LINK_TARGET)  # imported target from a real CMake config package
     target_link_libraries(photo_triage_cpp PRIVATE ${LIBRAW_LINK_TARGET})
-else()                   # pkg-config/manual fallback
+else()                   # pkg-config / manual fallback: full lib path + include dir
     target_include_directories(photo_triage_cpp PRIVATE ${LIBRAW_INCLUDE_DIRS})
     target_link_libraries(photo_triage_cpp PRIVATE ${LIBRAW_LIBRARIES})
 endif()

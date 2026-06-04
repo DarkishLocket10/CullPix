@@ -18,6 +18,7 @@ class QLabel;
 class QPushButton;
 class QStatusBar;
 class ImageLoader;
+class ImageView;
 class QListWidget;
 class QAction;
 
@@ -25,12 +26,27 @@ class QAction;
 struct FileTask;
 class FileWorker;
 
+// A decoded image plus whether it is final display quality. For RAW, a fast
+// embedded preview has full == false and gets upgraded to a full demosaic when
+// viewed; non-RAW decodes are always full. Keeping the flag with the pixels
+// means cache eviction can never desync a parallel "is full" set.
+struct CachedImage
+{
+    QImage image;
+    bool   full = false;
+};
+
 // Record of a move operation for undo purposes
 struct MoveAction
 {
     QString originalPath;
     QString destinationPath;
     int index;
+    // Decoded pixels retained so undo can restore the photo instantly without
+    // a synchronous re-decode. May be null (e.g. for older entries, see
+    // UNDO_IMAGE_RETAIN) in which case undo loads it asynchronously.
+    QImage image;
+    bool   imageFull = false;   // was `image` final display quality?
 };
 
 class PhotoTriageWindow : public QMainWindow
@@ -50,7 +66,7 @@ private slots:
     void handleMoveKeep();
     void handleMoveReject();
     void undoLastAction();
-    void onImagePreloaded(int index, const QString &path, const QImage &image);
+    void onImagePreloaded(int index, const QString &path, const QImage &image, bool fullQuality);
 
     // Navigate to the next and previous images without making a keep/reject decision.
     void goToNextImage();
@@ -83,15 +99,25 @@ private:
     // Data
     std::vector<QFileInfo> m_images;
     int m_currentIndex = -1;
-    // Cache of preloaded images keyed by the absolute file path. This
-    // allows the cache to remain valid even when indices shift after
-    // removing items.
-    QHash<QString, QImage> m_preloaded;
+    // Cache of preloaded images keyed by the absolute file path (with a
+    // per-entry "is full quality" flag). Keying by path keeps the cache valid
+    // even when indices shift after removing items.
+    QHash<QString, CachedImage> m_preloaded;
     std::deque<MoveAction> m_undoStack;
     static constexpr int MAX_UNDO = 20;
+    // Retain decoded pixels for only the most recent moves so undo is instant
+    // without holding many full-resolution frames in memory. The common "oops"
+    // undo only needs the last one; deeper undos load asynchronously.
+    static constexpr int UNDO_IMAGE_RETAIN = 3;
 
-    // Preloading queue: indices of images currently loading ahead
-    QSet<int> m_loading;
+    // Absolute paths with a prefetch (fast / preview-quality) load in flight.
+    // Tracked by path (not index) so the guard stays valid across the row
+    // shifts caused by keep/reject/undo.
+    QSet<QString> m_loading;
+    // Absolute paths with a full-quality load in flight for the *current*
+    // image (full RAW demosaic / full decode). Separate from m_loading so a
+    // pending fast preview never blocks the full-quality upgrade.
+    QSet<QString> m_fullRequested;
     static constexpr int PRELOAD_DEPTH = 10;
 
     // Number of images behind the current index to keep preloaded in the
@@ -114,7 +140,7 @@ private:
     QString m_discardDir;
 
     // UI elements
-    QLabel *m_imageLabel;
+    ImageView *m_imageView;
     QStatusBar *m_statusBar;
     QPushButton *m_keepButton;
     QPushButton *m_rejectButton;
