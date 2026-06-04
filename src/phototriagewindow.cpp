@@ -204,14 +204,23 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     connect(m_rejectButton, &QPushButton::clicked, this, &PhotoTriageWindow::handleMoveReject);
     connect(m_undoButton, &QPushButton::clicked, this, &PhotoTriageWindow::undoLastAction);
 
+    // Cull action buttons grouped together so "Show Buttons" can hide just
+    // these — the Timeline + Options controls stay on the bar, so settings
+    // remain reachable in-window even with the action buttons hidden.
+    m_actionButtons = new QWidget(this);
+    QHBoxLayout *actions = new QHBoxLayout(m_actionButtons);
+    actions->setContentsMargins(0, 0, 0, 0);
+    actions->setSpacing(12);
+    actions->addWidget(m_openButton);
+    actions->addWidget(m_keepButton);
+    actions->addWidget(m_rejectButton);
+    actions->addWidget(m_undoButton);
+
     QWidget *toolbarWidget = new QWidget(this);
     QHBoxLayout *hbox = new QHBoxLayout(toolbarWidget);
-    hbox->insertWidget(0, m_openButton);
     hbox->setContentsMargins(10, 8, 10, 8);
     hbox->setSpacing(12);
-    hbox->addWidget(m_keepButton);
-    hbox->addWidget(m_rejectButton);
-    hbox->addWidget(m_undoButton);
+    hbox->addWidget(m_actionButtons);
     hbox->addStretch(1);
 
     // Quick show/hide for the timeline, right-aligned on the toolbar.
@@ -279,9 +288,11 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
 
     viewMenu->addSeparator();
 
-    QAction *showButtonsAct = m_toolBar->toggleViewAction();
-    showButtonsAct->setText(tr("Show Buttons"));
-    viewMenu->addAction(showButtonsAct);
+    QAction *showButtonsAct = viewMenu->addAction(tr("Show Buttons"));
+    showButtonsAct->setCheckable(true);
+    showButtonsAct->setChecked(true);
+    connect(showButtonsAct, &QAction::toggled, this,
+            [this](bool on){ if (m_actionButtons) m_actionButtons->setVisible(on); });
 
     QAction *showInfoAct = viewMenu->addAction(tr("Show Info Bar"));
     showInfoAct->setCheckable(true);

@@ -173,7 +173,8 @@ private:
     // widget so it can be moved to any edge, floated, or hidden.
     QListWidget *m_fileListWidget;
     QDockWidget *m_timelineDock = nullptr;
-    QToolBar *m_toolBar = nullptr;          // bottom button bar (hide-able)
+    QToolBar *m_toolBar = nullptr;          // bottom button bar (always visible)
+    QWidget *m_actionButtons = nullptr;     // Open/Keep/Reject/Undo group (hide-able)
     QPushButton *m_timelineButton = nullptr; // quick show/hide on the toolbar
     QSlider *m_thumbSlider = nullptr;        // thumbnail-size control in the dock
     QHash<int, QAction*> m_timelinePosActions; // dock area -> position radio
