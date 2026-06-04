@@ -24,7 +24,7 @@ jobs:
             os: windows-latest
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # ---------------------------- macOS ----------------------------
       - name: Install dependencies (macOS)
@@ -77,7 +77,7 @@ jobs:
 
       # --------------------------- Upload ----------------------------
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.name }}
           if-no-files-found: ignore
@@ -95,7 +95,7 @@ jobs:
       contents: write   # required to create the release + tag
     steps:
       - name: Download all build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 
