@@ -97,6 +97,8 @@ private:
     // Lay the timeline list out as a single-row filmstrip (docked top/bottom)
     // or a wrapping grid (left/right/floating), and sync the position radio.
     void updateTimelineLayout();
+    // Apply accent-color or monochrome styling to the Keep/Reject/Undo buttons.
+    void applyButtonStyle();
     static bool naturalLess(const QFileInfo &a, const QFileInfo &b);
 
     QPushButton* m_openButton = nullptr;
@@ -175,6 +177,8 @@ private:
     QPushButton *m_timelineButton = nullptr; // quick show/hide on the toolbar
     QSlider *m_thumbSlider = nullptr;        // thumbnail-size control in the dock
     QHash<int, QAction*> m_timelinePosActions; // dock area -> position radio
+    bool m_showNames = false;   // show filenames under grid thumbnails (default off)
+    bool m_monochrome = false;  // neutral (no accent color) Keep/Reject/Undo buttons
 
     // Thumbnail cache keyed by absolute file path. Each entry stores a
     // QPixmap that represents a small preview. Caching prevents

@@ -106,7 +106,7 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     m_fileListWidget->setUniformItemSizes(true);
     m_fileListWidget->setSelectionMode(QAbstractItemView::SingleSelection);
     m_fileListWidget->setIconSize(QSize(96, 96));
-    m_fileListWidget->setGridSize(QSize(116, 132));
+    m_fileListWidget->setGridSize(QSize(116, 108));   // names hidden by default
     connect(m_fileListWidget, &QListWidget::currentRowChanged,
             this, &PhotoTriageWindow::onFileListSelectionChanged);
 
@@ -140,12 +140,12 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     sizeLabel->setStyleSheet(QStringLiteral("color:#9AA0A6;"));
     m_thumbSlider = new QSlider(Qt::Horizontal);
     m_thumbSlider->setRange(64, THUMB_PX);
-    m_thumbSlider->setValue(96);
     m_thumbSlider->setToolTip(tr("Thumbnail size"));
     connect(m_thumbSlider, &QSlider::valueChanged, this, [this](int v) {
         m_fileListWidget->setIconSize(QSize(v, v));
-        m_fileListWidget->setGridSize(QSize(v + 20, v + 36));
+        m_fileListWidget->setGridSize(QSize(v + 20, v + (m_showNames ? 36 : 12)));
     });
+    m_thumbSlider->setValue(96);   // fires the slot to set the initial grid metrics
     sizeRow->addWidget(sizeLabel);
     sizeRow->addWidget(m_thumbSlider, 1);
     tlLayout->addWidget(sizeBar);
@@ -183,21 +183,7 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     m_rejectButton = new QPushButton(tr("Reject (X)"));
     m_undoButton = new QPushButton(tr("Undo (U)"));
 
-    m_keepButton->setStyleSheet("QPushButton { background-color: #2A9D8F; color: #FFFFFF; "
-                                 "border: none; border-radius: 6px; padding: 8px 16px; "
-                                 "font-weight: 600; } "
-                                 "QPushButton:hover { background-color: #21867A; } "
-                                 "QPushButton:pressed { background-color: #1E745F; }");
-    m_rejectButton->setStyleSheet("QPushButton { background-color: #E76F51; color: #FFFFFF; "
-                                 "border: none; border-radius: 6px; padding: 8px 16px; "
-                                 "font-weight: 600; } "
-                                 "QPushButton:hover { background-color: #CF6045; } "
-                                 "QPushButton:pressed { background-color: #B25037; }");
-    m_undoButton->setStyleSheet("QPushButton { background-color: #F4A261; color: #FFFFFF; "
-                                 "border: none; border-radius: 6px; padding: 8px 16px; "
-                                 "font-weight: 600; } "
-                                 "QPushButton:hover { background-color: #D68F54; } "
-                                 "QPushButton:pressed { background-color: #BB7A46; }");
+    applyButtonStyle();   // accent colors by default; monochrome via Options
 
     m_openButton = new QPushButton(tr("Open Folder..."));
     m_openButton->setToolTip(tr("Open a folder of images (Ctrl+O)"));
@@ -302,6 +288,27 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     showInfoAct->setChecked(true);
     connect(showInfoAct, &QAction::toggled, this,
             [this](bool on){ m_statusBar->setVisible(on); });
+
+    QAction *showNamesAct = viewMenu->addAction(tr("Show Image Names"));
+    showNamesAct->setCheckable(true);
+    showNamesAct->setChecked(m_showNames);   // hidden by default
+    connect(showNamesAct, &QAction::toggled, this, [this](bool on) {
+        m_showNames = on;
+        const int n = m_fileListWidget->count();
+        for (int i = 0; i < n && i < static_cast<int>(m_images.size()); ++i)
+            if (QListWidgetItem *it = m_fileListWidget->item(i))
+                it->setText(on ? m_images[i].fileName() : QString());
+        const int v = m_thumbSlider->value();
+        m_fileListWidget->setGridSize(QSize(v + 20, v + (on ? 36 : 12)));
+    });
+
+    QAction *monoAct = viewMenu->addAction(tr("Monochrome Buttons"));
+    monoAct->setCheckable(true);
+    monoAct->setChecked(m_monochrome);
+    connect(monoAct, &QAction::toggled, this, [this](bool on) {
+        m_monochrome = on;
+        applyButtonStyle();
+    });
 
     // Thumbnail size presets (the timeline's slider gives fine control).
     QMenu *sizeMenu = viewMenu->addMenu(tr("Thumbnail Size"));
@@ -674,6 +681,29 @@ void PhotoTriageWindow::displayCurrentImage()
         m_fileListWidget->setCurrentRow(m_currentIndex);
         m_fileListWidget->scrollToItem(m_fileListWidget->currentItem(), QAbstractItemView::PositionAtCenter);
         m_fileListWidget->blockSignals(false);
+    }
+}
+
+void PhotoTriageWindow::applyButtonStyle()
+{
+    auto sheet = [](const char *base, const char *hover, const char *pressed) {
+        return QStringLiteral("QPushButton { background-color:%1; color:#FFFFFF; border:none; "
+                              "border-radius:6px; padding:8px 16px; font-weight:600; } "
+                              "QPushButton:hover { background-color:%2; } "
+                              "QPushButton:pressed { background-color:%3; }")
+            .arg(QString::fromLatin1(base))
+            .arg(QString::fromLatin1(hover))
+            .arg(QString::fromLatin1(pressed));
+    };
+    if (m_monochrome) {
+        const QString s = sheet("#3A3F47", "#33373E", "#2B2F35");
+        m_keepButton->setStyleSheet(s);
+        m_rejectButton->setStyleSheet(s);
+        m_undoButton->setStyleSheet(s);
+    } else {
+        m_keepButton->setStyleSheet(sheet("#2A9D8F", "#21867A", "#1E745F"));
+        m_rejectButton->setStyleSheet(sheet("#E76F51", "#CF6045", "#B25037"));
+        m_undoButton->setStyleSheet(sheet("#F4A261", "#D68F54", "#BB7A46"));
     }
 }
 
@@ -1088,7 +1118,7 @@ void PhotoTriageWindow::undoLastAction()
     if (m_fileListWidget) {
         static QFileIconProvider iconProvider;
         QListWidgetItem *newItem = new QListWidgetItem();
-        newItem->setText(QFileInfo(action.originalPath).fileName());
+        newItem->setText(m_showNames ? QFileInfo(action.originalPath).fileName() : QString());
         const QString opath = restoredKey;   // absolute path, matches cache keys
         if (m_thumbnailCache.contains(opath)) {
             newItem->setIcon(QIcon(m_thumbnailCache.value(opath)));
@@ -1171,7 +1201,7 @@ void PhotoTriageWindow::populateFileList()
     for (int i = 0; i < count; ++i) {
         const QFileInfo &fi = m_images.at(i);
         QListWidgetItem *item = new QListWidgetItem();
-        item->setText(fi.fileName());
+        item->setText(m_showNames ? fi.fileName() : QString());
         // If a cached thumbnail exists, use it; otherwise use a generic file icon
         const QString path = fi.absoluteFilePath();
         if (m_thumbnailCache.contains(path)) {
