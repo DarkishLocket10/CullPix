@@ -26,6 +26,9 @@ public:
     // Show centered text (e.g. "Loading…", "No images.") over a blank
     // background, covering any previous image.
     void showMessage(const QString &text);
+    // Overlay a small widget in the top-right corner (e.g. an Options gear),
+    // kept above the message overlay and repositioned on resize.
+    void setCornerWidget(QWidget *w);
 
 public slots:
     void fitToWindow();   // scale so the whole image is visible
@@ -48,10 +51,12 @@ private:
     // anchorViewPos fixed on screen — i.e. zoom about the cursor.
     void  zoomBy(qreal factor, const QPointF &anchorViewPos);
     void  updateSmoothing();       // smooth when downscaling, nearest at >=1:1
+    void  positionCornerWidget();  // keep the corner widget top-right
 
     QGraphicsScene      *m_scene = nullptr;
     QGraphicsPixmapItem *m_item = nullptr;
     QLabel              *m_overlay = nullptr;   // centered message text
+    QWidget             *m_cornerWidget = nullptr;  // e.g. Options gear (top-right)
     bool                 m_fitMode = true;
     bool                 m_panning = false;     // mid drag-to-pan
     QPoint               m_panLast;             // last cursor pos while panning

@@ -288,11 +288,11 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
 
     viewMenu->addSeparator();
 
-    QAction *showButtonsAct = viewMenu->addAction(tr("Show Buttons"));
-    showButtonsAct->setCheckable(true);
-    showButtonsAct->setChecked(true);
-    connect(showButtonsAct, &QAction::toggled, this,
-            [this](bool on){ if (m_actionButtons) m_actionButtons->setVisible(on); });
+    // Hide the whole bottom bar to reclaim photo space (Options stays reachable
+    // via the gear overlay and the macOS menu bar).
+    QAction *showButtonsAct = m_toolBar->toggleViewAction();
+    showButtonsAct->setText(tr("Show Buttons"));
+    viewMenu->addAction(showButtonsAct);
 
     QAction *showInfoAct = viewMenu->addAction(tr("Show Info Bar"));
     showInfoAct->setCheckable(true);
@@ -333,17 +333,19 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
         });
     }
 
-    // In-window "Options" button on the toolbar pops up this same menu, so all
-    // the settings are reachable without going to the macOS menu bar.
-    QPushButton *optionsButton = new QPushButton(tr("Options ▾"));
-    optionsButton->setAutoDefault(false);
-    optionsButton->setMenu(viewMenu);
-    optionsButton->setStyleSheet("QPushButton { background-color: #272b33; color: #FFFFFF; "
-                                 "border: none; border-radius: 6px; padding: 8px 16px; "
-                                 "font-weight: 600; } "
-                                 "QPushButton:hover { background-color: #23272e; } "
-                                 "QPushButton::menu-indicator { width: 0px; }");
-    hbox->addWidget(optionsButton);
+    // Options live in a small, always-visible gear tucked into the image's
+    // top-right corner, so they're reachable even when the toolbar is hidden
+    // and don't take up photo real estate.
+    QPushButton *gearButton = new QPushButton(QStringLiteral("⚙"));
+    gearButton->setMenu(viewMenu);
+    gearButton->setFixedSize(30, 30);
+    gearButton->setCursor(Qt::PointingHandCursor);
+    gearButton->setToolTip(tr("Options"));
+    gearButton->setStyleSheet("QPushButton { background-color: rgba(28,28,28,150); color:#E6E6E6; "
+                              "border:none; border-radius:15px; font-size:15px; } "
+                              "QPushButton:hover { background-color: rgba(58,63,71,215); } "
+                              "QPushButton::menu-indicator { width:0px; }");
+    m_imageView->setCornerWidget(gearButton);
 
     // Shortcuts
     // new QShortcut(QKeySequence(QStringLiteral("Z")), this, SLOT(handleMoveKeep()));

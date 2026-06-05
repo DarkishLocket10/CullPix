@@ -88,6 +88,25 @@ void ImageView::showMessage(const QString &text)
     m_overlay->setGeometry(viewport()->rect());
     m_overlay->show();
     m_overlay->raise();
+    if (m_cornerWidget)            // keep the gear reachable over the message
+        m_cornerWidget->raise();
+}
+
+void ImageView::setCornerWidget(QWidget *w)
+{
+    m_cornerWidget = w;
+    if (w) {
+        w->setParent(viewport());
+        positionCornerWidget();
+        w->show();
+        w->raise();
+    }
+}
+
+void ImageView::positionCornerWidget()
+{
+    if (m_cornerWidget)
+        m_cornerWidget->move(viewport()->width() - m_cornerWidget->width() - 12, 12);
 }
 
 void ImageView::fitToWindow()
@@ -153,6 +172,7 @@ void ImageView::resizeEvent(QResizeEvent *event)
     QGraphicsView::resizeEvent(event);
     if (m_overlay)
         m_overlay->setGeometry(viewport()->rect());
+    positionCornerWidget();
     if (m_fitMode)
         fitToWindow();
 }
