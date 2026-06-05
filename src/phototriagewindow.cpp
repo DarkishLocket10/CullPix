@@ -64,9 +64,10 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
             font-size: 14px;
         }
         QStatusBar {
-            background-color: #1E1E1E;
+            background-color: #161618;
             color: #B8BCC2;
-            border-top: 1px solid #2C2C2C;
+            border-top: 1px solid #2A2A2E;
+            padding: 2px 8px;
         }
         QStatusBar::item { border: none; }
         QListWidget {
@@ -115,6 +116,21 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
         QMenu::item { padding: 6px 24px 6px 12px; border-radius: 4px; }
         QMenu::item:selected { background-color: #2A9D8F; color: #FFFFFF; }
         QMenu::separator { height: 1px; background: #3A3F47; margin: 4px 8px; }
+        QToolBar {
+            background: #161618;
+            border: none;
+            border-top: 1px solid #2A2A2E;
+            padding: 0;
+        }
+        QDockWidget {
+            color: #C2C6CC;
+            font-weight: 600;
+        }
+        QDockWidget::title {
+            background: #161618;
+            padding: 7px 10px;
+            border-bottom: 1px solid #2A2A2E;
+        }
     )";
     qApp->setStyleSheet(appStyle);
 
@@ -205,14 +221,19 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     // Triage progress on the right of the status bar: a counts label and a slim
     // progress bar (kept + rejected out of the folder's total).
     m_countsLabel = new QLabel(this);
-    m_countsLabel->setStyleSheet(QStringLiteral("color:#9AA0A6; padding:0 10px;"));
+    m_countsLabel->setStyleSheet(QStringLiteral("color:#9AA0A6;"));
     m_progressBar = new QProgressBar(this);
     m_progressBar->setTextVisible(false);
-    m_progressBar->setFixedSize(150, 6);
+    m_progressBar->setFixedSize(140, 6);
     m_progressBar->setRange(0, 1);
     m_progressBar->setValue(0);
-    m_statusBar->addPermanentWidget(m_countsLabel);
-    m_statusBar->addPermanentWidget(m_progressBar);
+    QWidget *statusRight = new QWidget(this);
+    QHBoxLayout *statusRightLayout = new QHBoxLayout(statusRight);
+    statusRightLayout->setContentsMargins(0, 0, 8, 0);
+    statusRightLayout->setSpacing(12);
+    statusRightLayout->addWidget(m_countsLabel);
+    statusRightLayout->addWidget(m_progressBar);
+    m_statusBar->addPermanentWidget(statusRight);
 
     // Buttons with contemporary styling. Each button uses a distinct accent
     // color to convey its purpose. A green tone is used for "Keep", a
@@ -230,7 +251,7 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
 
     applyButtonStyle();   // accent colors by default; monochrome via Options
 
-    m_openButton = new QPushButton(tr("Open Folder..."));
+    m_openButton = new QPushButton(tr("Open Folder…"));
     m_openButton->setToolTip(tr("Open a folder of images (Ctrl+O)"));
     m_openButton->setShortcut(QKeySequence::Open);
     m_openButton->setAutoDefault(false);
@@ -408,13 +429,13 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     // and don't take up photo real estate.
     QPushButton *gearButton = new QPushButton(QStringLiteral("⚙"));
     gearButton->setMenu(viewMenu);
-    gearButton->setFixedSize(30, 30);
+    gearButton->setFixedSize(32, 32);
     gearButton->setCursor(Qt::PointingHandCursor);
     gearButton->setToolTip(tr("Options"));
     gearButton->setAccessibleName(tr("Options"));
-    gearButton->setStyleSheet("QPushButton { background-color: rgba(28,28,28,150); color:#E6E6E6; "
-                              "border:none; border-radius:15px; font-size:15px; } "
-                              "QPushButton:hover { background-color: rgba(58,63,71,215); } "
+    gearButton->setStyleSheet("QPushButton { background-color: rgba(45,47,54,205); color:#E8E8EA; "
+                              "border:1px solid rgba(255,255,255,38); border-radius:16px; font-size:16px; } "
+                              "QPushButton:hover { background-color: rgba(72,78,88,230); } "
                               "QPushButton::menu-indicator { width:0px; }");
     m_imageView->setCornerWidget(gearButton);
 
