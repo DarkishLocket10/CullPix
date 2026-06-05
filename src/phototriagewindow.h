@@ -74,6 +74,7 @@ private slots:
     void handleMoveKeep();
     void handleMoveReject();
     void undoLastAction();
+    void toggleCompare();   // enter/leave side-by-side compare
     void onImagePreloaded(int index, const QString &path, const QImage &image, bool fullQuality);
 
     // Navigate to the next and previous images without making a keep/reject decision.
@@ -90,7 +91,15 @@ private:
     void displayCurrentImage();
     void ensurePreloadWindow();
     void preloadNext();
-    void performMove(const QString &action);
+    // Move the image at m_images[idx] to keep/discard. Handles single mode and
+    // both panes of compare (with the cursor bookkeeping a cull triggers).
+    void performMoveAt(const QString &action, int idx);
+    // Show m_images[idx] in the given pane (cache hit, placeholder, or async
+    // full-quality load). Used for both the main and comparison panes.
+    void displayInPane(ImageView *view, int idx);
+    // Compare mode helpers.
+    void setComparePane(bool compareActive);   // choose & highlight the active pane
+    int  activeIndex() const;                  // index the active pane is showing
     // Refresh the status-bar counts label + progress bar from the kept/rejected
     // counters and the remaining image count.
     void refreshProgress();
@@ -157,6 +166,12 @@ private:
 
     // UI elements
     ImageView *m_imageView;
+    ImageView *m_compareView = nullptr;   // second pane, shown only in compare
+    bool m_compareMode = false;
+    int  m_compareIndex = -1;             // image shown in the compare pane
+    bool m_activeIsCompare = false;       // which pane Z/X/arrows act on
+    QPushButton *m_compareButton = nullptr;
+    QAction *m_compareAct = nullptr;      // Options-menu Compare toggle
     QStatusBar *m_statusBar;
     QPushButton *m_keepButton;
     QPushButton *m_rejectButton;

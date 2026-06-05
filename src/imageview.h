@@ -29,6 +29,12 @@ public:
     // Overlay a small widget in the top-right corner (e.g. an Options gear),
     // kept above the message overlay and repositioned on resize.
     void setCornerWidget(QWidget *w);
+    // Draw (or clear) a gentle accent border marking this as the active pane
+    // in side-by-side compare.
+    void setActive(bool on);
+
+signals:
+    void activated();   // emitted when the user clicks this view
 
 public slots:
     void fitToWindow();   // scale so the whole image is visible
@@ -38,6 +44,7 @@ protected:
     void resizeEvent(QResizeEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
     bool viewportEvent(QEvent *event) override;            // trackpad pinch
+    void drawForeground(QPainter *painter, const QRectF &rect) override; // active border
     void mouseDoubleClickEvent(QMouseEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;     // start drag-to-pan
     void mouseMoveEvent(QMouseEvent *event) override;      // pan while dragging
@@ -60,4 +67,5 @@ private:
     bool                 m_fitMode = true;
     bool                 m_panning = false;     // mid drag-to-pan
     QPoint               m_panLast;             // last cursor pos while panning
+    bool                 m_active = false;      // active pane in compare mode
 };

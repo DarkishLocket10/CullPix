@@ -109,6 +109,30 @@ void ImageView::positionCornerWidget()
         m_cornerWidget->move(viewport()->width() - m_cornerWidget->width() - 12, 12);
 }
 
+void ImageView::setActive(bool on)
+{
+    if (m_active == on)
+        return;
+    m_active = on;
+    viewport()->update();   // repaint the active border
+}
+
+void ImageView::drawForeground(QPainter *painter, const QRectF &rect)
+{
+    QGraphicsView::drawForeground(painter, rect);
+    if (!m_active)
+        return;
+    // Gentle accent ring around the active pane, drawn in viewport coordinates.
+    painter->save();
+    painter->setWorldMatrixEnabled(false);
+    painter->setRenderHint(QPainter::Antialiasing, true);
+    QPen pen(QColor("#2A9D8F"), 3);
+    painter->setPen(pen);
+    painter->setBrush(Qt::NoBrush);
+    painter->drawRect(QRectF(viewport()->rect()).adjusted(1.5, 1.5, -1.5, -1.5));
+    painter->restore();
+}
+
 void ImageView::fitToWindow()
 {
     m_fitMode = true;
@@ -217,6 +241,8 @@ void ImageView::mouseDoubleClickEvent(QMouseEvent *event)
 
 void ImageView::mousePressEvent(QMouseEvent *event)
 {
+    if (event->button() == Qt::LeftButton)
+        emit activated();   // clicking a pane makes it the active one (compare)
     // Begin a drag-to-pan. The grab cursor is shown only now (not on hover),
     // so a plain hover keeps the normal cursor and the OS resize cursor can
     // appear at the window edges.
