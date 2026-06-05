@@ -92,6 +92,29 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
             background-color: #2A9D8F;
             border-radius: 3px;
         }
+        QScrollBar:vertical { background: transparent; width: 10px; margin: 2px; }
+        QScrollBar::handle:vertical { background: #3A3F47; border-radius: 5px; min-height: 28px; }
+        QScrollBar::handle:vertical:hover { background: #4A505A; }
+        QScrollBar:horizontal { background: transparent; height: 10px; margin: 2px; }
+        QScrollBar::handle:horizontal { background: #3A3F47; border-radius: 5px; min-width: 28px; }
+        QScrollBar::handle:horizontal:hover { background: #4A505A; }
+        QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
+        QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
+        QSlider::groove:horizontal { height: 4px; background: #2C2C2C; border-radius: 2px; }
+        QSlider::sub-page:horizontal { background: #2A9D8F; border-radius: 2px; }
+        QSlider::handle:horizontal { background: #E0E0E0; width: 14px; margin: -6px 0; border-radius: 7px; }
+        QSlider::handle:horizontal:hover { background: #FFFFFF; }
+        QToolTip {
+            background-color: #1E1E1E; color: #E0E0E0;
+            border: 1px solid #3A3F47; border-radius: 4px; padding: 4px 6px;
+        }
+        QMenu {
+            background-color: #1E1E1E; color: #E0E0E0;
+            border: 1px solid #3A3F47; border-radius: 6px; padding: 4px;
+        }
+        QMenu::item { padding: 6px 24px 6px 12px; border-radius: 4px; }
+        QMenu::item:selected { background-color: #2A9D8F; color: #FFFFFF; }
+        QMenu::separator { height: 1px; background: #3A3F47; margin: 4px 8px; }
     )";
     qApp->setStyleSheet(appStyle);
 
@@ -115,6 +138,8 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     m_imageView = new ImageView(this);
     m_compareView = new ImageView(this);
     m_compareView->hide();   // shown only in side-by-side compare
+    m_imageView->setAccessibleName(tr("Main photo"));
+    m_compareView->setAccessibleName(tr("Comparison photo"));
 
     QSplitter *centralSplit = new QSplitter(Qt::Horizontal, this);
     centralSplit->addWidget(m_imageView);
@@ -153,6 +178,7 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     m_thumbSlider = new QSlider(Qt::Horizontal);
     m_thumbSlider->setRange(64, THUMB_PX);
     m_thumbSlider->setToolTip(tr("Thumbnail size"));
+    m_thumbSlider->setAccessibleName(tr("Thumbnail size"));
     connect(m_thumbSlider, &QSlider::valueChanged, this, [this](int v) {
         m_fileListWidget->setIconSize(QSize(v, v));
         m_fileListWidget->setGridSize(QSize(v + 20, v + (m_showNames ? 36 : 12)));
@@ -224,6 +250,18 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     connect(m_undoButton, &QPushButton::clicked, this, &PhotoTriageWindow::undoLastAction);
     connect(m_compareButton, &QPushButton::clicked, this, &PhotoTriageWindow::toggleCompare);
 
+    // Tooltips (with shortcut hints) and accessible names for discoverability
+    // and screen readers.
+    m_keepButton->setToolTip(tr("Keep — move to the keep/ folder  (Z)"));
+    m_rejectButton->setToolTip(tr("Reject — move to the discard/ folder  (X)"));
+    m_undoButton->setToolTip(tr("Undo the last move  (U or ⌘Z)"));
+    m_compareButton->setToolTip(tr("Compare two photos side by side  (C)"));
+    m_keepButton->setAccessibleName(tr("Keep"));
+    m_rejectButton->setAccessibleName(tr("Reject"));
+    m_undoButton->setAccessibleName(tr("Undo"));
+    m_compareButton->setAccessibleName(tr("Compare"));
+    m_openButton->setAccessibleName(tr("Open folder"));
+
     // Cull action buttons grouped together so "Show Buttons" can hide just
     // these — the Timeline + Options controls stay on the bar, so settings
     // remain reachable in-window even with the action buttons hidden.
@@ -249,6 +287,8 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     m_timelineButton->setCheckable(true);
     m_timelineButton->setChecked(true);
     m_timelineButton->setAutoDefault(false);
+    m_timelineButton->setToolTip(tr("Show or hide the timeline  (T)"));
+    m_timelineButton->setAccessibleName(tr("Toggle timeline"));
     m_timelineButton->setStyleSheet("QPushButton { background-color: #272b33; color: #FFFFFF; "
                                      "border: none; border-radius: 6px; padding: 8px 16px; "
                                      "font-weight: 600; } "
@@ -359,6 +399,10 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
         });
     }
 
+    viewMenu->addSeparator();
+    QAction *shortcutsAct = viewMenu->addAction(tr("Keyboard Shortcuts…"));
+    connect(shortcutsAct, &QAction::triggered, this, &PhotoTriageWindow::showShortcuts);
+
     // Options live in a small, always-visible gear tucked into the image's
     // top-right corner, so they're reachable even when the toolbar is hidden
     // and don't take up photo real estate.
@@ -367,6 +411,7 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     gearButton->setFixedSize(30, 30);
     gearButton->setCursor(Qt::PointingHandCursor);
     gearButton->setToolTip(tr("Options"));
+    gearButton->setAccessibleName(tr("Options"));
     gearButton->setStyleSheet("QPushButton { background-color: rgba(28,28,28,150); color:#E6E6E6; "
                               "border:none; border-radius:15px; font-size:15px; } "
                               "QPushButton:hover { background-color: rgba(58,63,71,215); } "
@@ -398,6 +443,14 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     // Arrow key shortcuts to browse images without performing any action
     new QShortcut(QKeySequence(Qt::Key_Right), this, SLOT(goToNextImage()));
     new QShortcut(QKeySequence(Qt::Key_Left), this, SLOT(goToPreviousImage()));
+
+    auto sEsc = new QShortcut(QKeySequence(Qt::Key_Escape), this);
+    sEsc->setContext(Qt::ApplicationShortcut);
+    connect(sEsc, &QShortcut::activated, this, [this]{ if (m_compareMode) toggleCompare(); });
+
+    auto sHelp = new QShortcut(QKeySequence(QStringLiteral("?")), this);
+    sHelp->setContext(Qt::ApplicationShortcut);
+    connect(sHelp, &QShortcut::activated, this, &PhotoTriageWindow::showShortcuts);
 
     // Ask for source folder on startup after event loop starts
     QTimer::singleShot(0, this, &PhotoTriageWindow::chooseSourceFolder);
@@ -1145,6 +1198,28 @@ void PhotoTriageWindow::handleMoveKeep()
 void PhotoTriageWindow::handleMoveReject()
 {
     performMoveAt(QStringLiteral("discard"), activeIndex());
+}
+
+void PhotoTriageWindow::showShortcuts()
+{
+    QMessageBox box(this);
+    box.setWindowTitle(tr("Keyboard Shortcuts"));
+    box.setIcon(QMessageBox::NoIcon);
+    box.setTextFormat(Qt::RichText);
+    box.setText(tr(
+        "<div style='min-width:380px'>"
+        "<b>Cull</b><br>"
+        "Z &mdash; Keep &nbsp;·&nbsp; X &mdash; Reject &nbsp;·&nbsp; U / &#8984;Z &mdash; Undo<br><br>"
+        "<b>Browse</b><br>"
+        "&larr; / &rarr; &mdash; Previous / Next &nbsp;·&nbsp; O &mdash; Open folder &nbsp;·&nbsp; T &mdash; Show/hide timeline<br><br>"
+        "<b>Zoom the photo</b><br>"
+        "Double&#8209;click or 1 &mdash; 100% &nbsp;·&nbsp; 0 &mdash; Fit &nbsp;·&nbsp; + / &minus; &mdash; Zoom<br>"
+        "Pinch or &#8984;&#8209;scroll &mdash; Zoom &nbsp;·&nbsp; Drag &mdash; Pan<br><br>"
+        "<b>Compare</b><br>"
+        "C &mdash; Toggle &nbsp;·&nbsp; &larr; / &rarr; or click &mdash; Pick a pane &nbsp;·&nbsp; Z / X &mdash; Cull it &nbsp;·&nbsp; Esc &mdash; Exit<br><br>"
+        "<b>?</b> &mdash; Show this list"
+        "</div>"));
+    box.exec();
 }
 
 int PhotoTriageWindow::activeIndex() const

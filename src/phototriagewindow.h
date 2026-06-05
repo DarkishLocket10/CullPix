@@ -100,6 +100,7 @@ private:
     // Compare mode helpers.
     void setComparePane(bool compareActive);   // choose & highlight the active pane
     int  activeIndex() const;                  // index the active pane is showing
+    void showShortcuts();                      // keyboard-shortcuts help dialog
     // Refresh the status-bar counts label + progress bar from the kept/rejected
     // counters and the remaining image count.
     void refreshProgress();
