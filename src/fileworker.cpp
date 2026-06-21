@@ -6,8 +6,8 @@
 // to the appropriate console or log depending on platform.
 #include <QDebug>
 
-FileWorker::FileWorker()
-    : m_running(true), m_thread(&FileWorker::run, this)
+FileWorker::FileWorker(QObject *parent)
+    : QObject(parent), m_running(true), m_thread(&FileWorker::run, this)
 {
 }
 
@@ -81,6 +81,7 @@ void FileWorker::run()
             if (!QFile::rename(task.source, task.destination)) {
                 qWarning() << "FileWorker: failed to move" << task.source
                            << "to" << task.destination;
+                emit moveFailed(task.source, task.destination);
             }
         }
     }

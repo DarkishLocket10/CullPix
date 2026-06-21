@@ -9,13 +9,25 @@ static QImage qimageFromMemImage(const libraw_processed_image_t* img)
 {
     if (!img) return {};
     if (img->type == LIBRAW_IMAGE_BITMAP) {
-        // img->colors=3, img->bits=8 expected
+        // We only know how to wrap an 8-bit RGB bitmap. Anything else (16-bit,
+        // grayscale, 4-colour CMYG sensors, …) would make the copy below
+        // mis-sized and over-read LibRaw's buffer, so refuse it and let the
+        // caller fall back to another decode path rather than risk a crash.
+        if (img->colors != 3 || img->bits != 8) return {};
         const int w = img->width, h = img->height;
+        if (w <= 0 || h <= 0) return {};
+        const size_t srcStride = size_t(w) * 3;            // LibRaw rows are packed
+        // Defend against an unexpectedly short buffer.
+        if (img->data_size < srcStride * static_cast<size_t>(h)) return {};
         const uchar* data = img->data;
-        // LibRaw bitmap is 8-bit RGB
         QImage out(w, h, QImage::Format_RGB888);
         if (out.isNull()) return {};
-        memcpy(out.bits(), data, size_t(w)*h*3);
+        // QImage pads each scanline to a 4-byte boundary while LibRaw does not,
+        // so copy row by row. A flat memcpy would shear the image for any width
+        // where w*3 isn't a multiple of 4.
+        for (int y = 0; y < h; ++y) {
+            memcpy(out.scanLine(y), data + static_cast<size_t>(y) * srcStride, srcStride);
+        }
         return out;
     } else if (img->type == LIBRAW_IMAGE_JPEG) {
         // Decode JPEG buffer to QImage

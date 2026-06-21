@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include <QObject>
 #include <QString>
 #include <QFile>
 
@@ -22,11 +23,12 @@ struct FileTask
     QString destination;
 };
 
-class FileWorker
+class FileWorker : public QObject
 {
+    Q_OBJECT
 public:
-    FileWorker();
-    ~FileWorker();
+    explicit FileWorker(QObject *parent = nullptr);
+    ~FileWorker() override;
 
     // Enqueue a new move task.  The worker will process it asynchronously.
     void enqueue(const FileTask &task);
@@ -40,6 +42,13 @@ public:
 
     // Stop the worker thread gracefully.  Called during shutdown.
     void stop();
+
+signals:
+    // Emitted from the worker thread (deliver with a queued connection) when a
+    // move could not be completed — e.g. the destination volume is read-only or
+    // the card was removed. Lets the UI tell the user instead of silently
+    // dropping the operation.
+    void moveFailed(const QString &source, const QString &destination);
 
 private:
     void run();

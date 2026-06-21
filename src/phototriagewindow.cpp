@@ -30,11 +30,11 @@
 #include <QApplication>
 #include <QTimer>
 #include <QThread>
+#include <QThreadPool>
 #include <QIcon>
 #include <QPixmap>
 #include <QFileIconProvider>
 #include <QSet>
-#include <QQueue>
 
 // RAW decoding is handled entirely on the worker thread by ImageLoader, so
 // this translation unit no longer needs RawLoader directly.
@@ -182,15 +182,40 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     new QShortcut(QKeySequence(Qt::Key_Right), this, SLOT(goToNextImage()));
     new QShortcut(QKeySequence(Qt::Key_Left), this, SLOT(goToPreviousImage()));
 
+    // Bounded decode pools. Heavy preview/full decodes are capped just below
+    // the core count so a folder of RAWs can never spawn an unbounded number of
+    // concurrent full-resolution demosaics; thumbnails get their own small pool
+    // so they don't starve (or get starved by) the visible image.
+    const int cores = QThread::idealThreadCount();
+    m_decodePool = new QThreadPool(this);
+    m_decodePool->setMaxThreadCount(qBound(2, cores - 1, 4));
+    m_thumbPool = new QThreadPool(this);
+    m_thumbPool->setMaxThreadCount(2);
+
+    // Debounce timer for the full-quality upgrade of the current image.
+    m_fullQualityTimer = new QTimer(this);
+    m_fullQualityTimer->setSingleShot(true);
+    m_fullQualityTimer->setInterval(120);
+    connect(m_fullQualityTimer, &QTimer::timeout,
+            this, &PhotoTriageWindow::loadFullQualityForCurrent);
+
     // Ask for source folder on startup after event loop starts
     QTimer::singleShot(0, this, &PhotoTriageWindow::chooseSourceFolder);
 
-    // Initialise asynchronous file worker
+    // Initialise asynchronous file worker and surface move failures to the user.
     m_fileWorker = new FileWorker();
+    connect(m_fileWorker, &FileWorker::moveFailed,
+            this, &PhotoTriageWindow::onMoveFailed, Qt::QueuedConnection);
 }
 
 PhotoTriageWindow::~PhotoTriageWindow()
 {
+    // Abandon any in-flight decodes (cancelled tasks bail before doing real
+    // work) and drain the pools so no worker touches us during teardown.
+    cancelAllLoads();
+    if (m_decodePool) m_decodePool->waitForDone();
+    if (m_thumbPool)  m_thumbPool->waitForDone();
+
     // Stop and delete the file worker
     if (m_fileWorker) {
         m_fileWorker->stop();
@@ -208,7 +233,9 @@ void PhotoTriageWindow::resizeEvent(QResizeEvent *event)
 
 void PhotoTriageWindow::closeEvent(QCloseEvent *event)
 {
-    // Stop file worker when closing
+    // Stop background work when closing so nothing keeps decoding after the
+    // window goes away.
+    cancelAllLoads();
     if (m_fileWorker) {
         m_fileWorker->stop();
     }
@@ -425,10 +452,11 @@ void PhotoTriageWindow::loadSourceDirectory(const QString &directory)
     QDir().mkpath(m_keepDir);
     QDir().mkpath(m_discardDir);
 
-    // Reset state
+    // Reset state. cancelAllLoads() trips every in-flight decode from the
+    // previous folder and clears the loading/token bookkeeping so stale results
+    // can't repopulate the cache.
+    cancelAllLoads();
     m_preloaded.clear();
-    m_loading.clear();
-    m_fullRequested.clear();
     m_undoStack.clear();
     m_statusBar->clearMessage();
 
@@ -474,20 +502,17 @@ void PhotoTriageWindow::displayCurrentImage()
         m_imageView->showMessage(tr("Loading…"));
     }
 
-    // Ensure the *current* image reaches full display quality: a full-resolution
-    // decode (JPEG) or full demosaic (RAW), off the UI thread, swapped in by
-    // onImagePreloaded(). This runs for a cache miss and for a cached fast RAW
-    // preview alike — but only ever for the image being viewed, never the
-    // prefetch ring (so a RAW folder won't fire many concurrent demosaics).
+    // Upgrade the current image to full display quality — a full-resolution
+    // decode (JPEG) or full demosaic (RAW) — but *debounced*: arm a short timer
+    // rather than decoding immediately. Scrubbing through a folder keeps
+    // restarting the timer, so only the image the user settles on gets the
+    // heavyweight decode. This is the change that stops fast navigation through
+    // a RAW folder from spawning a pile of concurrent demosaics.
     const bool haveFull = m_preloaded.contains(key) && m_preloaded.value(key).full;
     if (!haveFull && !m_fullRequested.contains(key)) {
-        ImageLoader *ldr = new ImageLoader(m_currentIndex, key, this, QSize(), /*fullQuality=*/true);
-        connect(ldr, &ImageLoader::loaded,
-                this, &PhotoTriageWindow::onImagePreloaded,
-                Qt::QueuedConnection);
-        connect(ldr, &QThread::finished, ldr, &QObject::deleteLater);
-        m_fullRequested.insert(key);
-        ldr->start();
+        m_fullQualityTimer->start();   // single-shot; coalesces rapid navigation
+    } else {
+        m_fullQualityTimer->stop();
     }
     // Update status bar
     m_statusBar->showMessage(tr("%1/%2 – %3").arg(m_currentIndex + 1).arg(m_images.size()).arg(fi.fileName()));
@@ -517,44 +542,77 @@ void PhotoTriageWindow::ensurePreloadWindow()
     if (m_currentIndex < 0 || m_currentIndex >= static_cast<int>(m_images.size())) {
         return;
     }
-    // Maintain a sliding window of preloaded images around the current index.  The
-    // cache retains images within [currentIndex - PRELOAD_BACK_DEPTH, currentIndex + PRELOAD_DEPTH].
+    // Maintain a sliding window of preloaded images around the current index:
+    // [currentIndex - PRELOAD_BACK_DEPTH, currentIndex + PRELOAD_DEPTH].
+    const int lo = m_currentIndex - PRELOAD_BACK_DEPTH;
+    const int hi = m_currentIndex + PRELOAD_DEPTH;
+
+    // Evict cached images that have fallen outside the window.
     for (auto it = m_preloaded.begin(); it != m_preloaded.end(); ) {
-        const QString path = it.key();
-        int idx = indexFromPath(path);
-        // Keep images within the window; evict those too far behind or ahead
-        if (idx < m_currentIndex - PRELOAD_BACK_DEPTH || idx > m_currentIndex + PRELOAD_DEPTH) {
+        const int idx = indexFromPath(it.key());
+        if (idx < lo || idx > hi) {
             it = m_preloaded.erase(it);
         } else {
             ++it;
         }
     }
-    // Preload ahead within the forward window
-    for (int i = m_currentIndex + 1; i <= m_currentIndex + PRELOAD_DEPTH && i < m_images.size(); ++i) {
-        const QString key = m_images.at(i).absoluteFilePath();
-        if (m_preloaded.contains(key) || m_loading.contains(key)) continue;
-        ImageLoader *ldr = new ImageLoader(i, key, this, QSize(), /*fullQuality=*/false);
-        connect(ldr, &ImageLoader::loaded,
-                this,  &PhotoTriageWindow::onImagePreloaded,
-                Qt::QueuedConnection);
-        connect(ldr, &QThread::finished, ldr, &QObject::deleteLater);
-        m_loading.insert(key);
-        ldr->start();
+
+    // Cancel and forget preview prefetches that have drifted out of the window
+    // so a fast scrub doesn't leave the pool clogged with stale decodes, and
+    // drop tokens for prefetches that have already completed.
+    for (auto it = m_imgTokens.begin(); it != m_imgTokens.end(); ) {
+        const QString &path = it.key();
+        const int idx = indexFromPath(path);
+        if (idx < lo || idx > hi) {
+            if (it.value()) it.value()->store(true);   // abandon the stale decode
+            m_loading.remove(path);
+            it = m_imgTokens.erase(it);
+        } else if (!m_loading.contains(path)) {
+            it = m_imgTokens.erase(it);                 // finished; token spent
+        } else {
+            ++it;
+        }
     }
-    // Optionally preload a small number of images behind the current one to
-    // facilitate smooth backward navigation.  Only start loaders for those
-    // indices if not already cached or loading.
-    for (int i = m_currentIndex - 1; i >= m_currentIndex - PRELOAD_BACK_DEPTH && i >= 0; --i) {
-        const QString key = m_images.at(i).absoluteFilePath();
-        if (m_preloaded.contains(key) || m_loading.contains(key)) continue;
-        ImageLoader *ldr = new ImageLoader(i, key, this, QSize(), /*fullQuality=*/false);
-        connect(ldr, &ImageLoader::loaded,
-                this,  &PhotoTriageWindow::onImagePreloaded,
-                Qt::QueuedConnection);
-        connect(ldr, &QThread::finished, ldr, &QObject::deleteLater);
-        m_loading.insert(key);
-        ldr->start();
+
+    // Prefetch fast previews ahead, then a few behind for snappy back-nav.
+    for (int i = m_currentIndex + 1; i <= hi && i < static_cast<int>(m_images.size()); ++i) {
+        maybeStartPreview(i);
     }
+    for (int i = m_currentIndex - 1; i >= lo && i >= 0; --i) {
+        maybeStartPreview(i);
+    }
+}
+
+void PhotoTriageWindow::maybeStartPreview(int i)
+{
+    const QString key = m_images.at(i).absoluteFilePath();
+    if (m_preloaded.contains(key) || m_loading.contains(key)) {
+        return;
+    }
+    startImageLoad(i, key, /*fullQuality=*/false);
+}
+
+// Launch a pooled, cancellable decode. Preview prefetches go in m_imgTokens
+// (keyed by path) so they can be abandoned when they leave the window; the
+// single full-quality decode lives in m_fullToken and supersedes any prior one,
+// since only the current image is ever wanted at full quality.
+void PhotoTriageWindow::startImageLoad(int index, const QString &key, bool fullQuality)
+{
+    CancelToken tok = makeCancelToken();
+    ImageLoader *ldr = new ImageLoader(index, key, QSize(), fullQuality, tok);
+    connect(ldr, &ImageLoader::loaded,
+            this, &PhotoTriageWindow::onImagePreloaded, Qt::QueuedConnection);
+    connect(ldr, &ImageLoader::finished, ldr, &QObject::deleteLater);
+
+    if (fullQuality) {
+        if (m_fullToken) m_fullToken->store(true);   // abandon any previous full decode
+        m_fullToken = tok;
+        m_fullRequested.insert(key);
+    } else {
+        m_imgTokens.insert(key, tok);
+        m_loading.insert(key);
+    }
+    m_decodePool->start(ldr);
 }
 
 
@@ -570,8 +628,9 @@ void PhotoTriageWindow::onImagePreloaded(int index, const QString &path, const Q
     } else if (!haveFull) {
         m_preloaded.insert(path, CachedImage{image, false});
     }
-    // Clear the prefetch in-flight marker for this path.
+    // Clear the prefetch in-flight marker and spent token for this path.
     m_loading.remove(path);
+    m_imgTokens.remove(path);
     // If this is the image on screen — a fast preview just arrived, the
     // full-quality upgrade finished, or an un-cached photo was undone — show it
     // now. displayCurrentImage() also re-requests full quality if still needed.
@@ -580,6 +639,57 @@ void PhotoTriageWindow::onImagePreloaded(int index, const QString &path, const Q
         displayCurrentImage();
     }
     ensurePreloadWindow();
+}
+
+// Fired by the debounce timer once the user settles on an image. Kicks off the
+// heavyweight full-quality decode for the current image only.
+void PhotoTriageWindow::loadFullQualityForCurrent()
+{
+    if (m_currentIndex < 0 || m_currentIndex >= static_cast<int>(m_images.size())) {
+        return;
+    }
+    const QString key = m_images.at(m_currentIndex).absoluteFilePath();
+    const bool haveFull = m_preloaded.contains(key) && m_preloaded.value(key).full;
+    if (haveFull || m_fullRequested.contains(key)) {
+        return;
+    }
+    startImageLoad(m_currentIndex, key, /*fullQuality=*/true);
+}
+
+// Surface a failed background move (e.g. a write-protected/removed card) instead
+// of letting it disappear into the log.
+void PhotoTriageWindow::onMoveFailed(const QString &source, const QString &destination)
+{
+    Q_UNUSED(destination);
+    m_statusBar->showMessage(
+        tr("Couldn't move \"%1\" — is the card/folder writable?")
+            .arg(QFileInfo(source).fileName()),
+        6000);
+}
+
+// Trip every in-flight decode's cancellation token and reset all loading
+// bookkeeping. Cancelled tasks bail before doing real work and self-delete, so
+// this is safe to call on folder switches and during teardown.
+void PhotoTriageWindow::cancelAllLoads()
+{
+    for (const CancelToken &t : m_imgTokens) {
+        if (t) t->store(true);
+    }
+    m_imgTokens.clear();
+    for (const CancelToken &t : m_thumbTokens) {
+        if (t) t->store(true);
+    }
+    m_thumbTokens.clear();
+    if (m_fullToken) {
+        m_fullToken->store(true);
+        m_fullToken.reset();
+    }
+    m_loading.clear();
+    m_fullRequested.clear();
+    m_thumbLoadingPaths.clear();
+    if (m_fullQualityTimer) {
+        m_fullQualityTimer->stop();
+    }
 }
 
 // Initiate asynchronous thumbnail loading for list items that do not yet
@@ -591,46 +701,28 @@ void PhotoTriageWindow::startThumbnailLoaders()
     // Do not attempt to load thumbnails if the list is empty or widget missing
     if (!m_fileListWidget)
         return;
-    // Build the pending queue of indices requiring thumbnail load.  Only
-    // enqueue items without a cached thumbnail and not already loading.
-    m_thumbPending.clear();
+    // Enqueue every image that lacks a cached thumbnail and isn't already
+    // loading. Concurrency is bounded by m_thumbPool, so submitting them all at
+    // once is safe even for very large folders.
     const int count = static_cast<int>(m_images.size());
     for (int i = 0; i < count; ++i) {
         const QString path = m_images.at(i).absoluteFilePath();
-        if (m_thumbnailCache.contains(path))
-            continue;
-        if (m_thumbLoadingPaths.contains(path))
-            continue;
-        m_thumbPending.enqueue(i);
-    }
-    // Immediately start up to MAX_THUMB_CONCURRENCY loaders.  Remaining tasks
-    // will be launched as earlier loads complete.  If the pending queue is
-    // empty, this call has no effect.
-    startNextThumbnailLoader();
-}
-
-void PhotoTriageWindow::startNextThumbnailLoader()
-{
-    // Launch new thumbnail loader(s) until we reach the concurrency limit or
-    // run out of pending items.  Using a loop here allows us to catch up
-    // quickly when multiple loads finish in rapid succession.
-    while (m_thumbLoadingPaths.size() < MAX_THUMB_CONCURRENCY && !m_thumbPending.isEmpty()) {
-        int index = m_thumbPending.dequeue();
-        if (index < 0 || index >= static_cast<int>(m_images.size()))
-            continue;
-        const QString path = m_images.at(index).absoluteFilePath();
-        // Skip if already cached or loading
         if (m_thumbnailCache.contains(path) || m_thumbLoadingPaths.contains(path))
             continue;
-        // Launch loader
-        ImageLoader *ldr = new ImageLoader(index, path, this, QSize(60, 60));
-        connect(ldr, &ImageLoader::loaded,
-                this, &PhotoTriageWindow::onThumbnailLoaded,
-                Qt::QueuedConnection);
-        connect(ldr, &QThread::finished, ldr, &QObject::deleteLater);
-        m_thumbLoadingPaths.insert(path);
-        ldr->start();
+        startThumbLoad(i, path);
     }
+}
+
+void PhotoTriageWindow::startThumbLoad(int index, const QString &path)
+{
+    CancelToken tok = makeCancelToken();
+    ImageLoader *ldr = new ImageLoader(index, path, QSize(60, 60), /*fullQuality=*/false, tok);
+    connect(ldr, &ImageLoader::loaded,
+            this, &PhotoTriageWindow::onThumbnailLoaded, Qt::QueuedConnection);
+    connect(ldr, &ImageLoader::finished, ldr, &QObject::deleteLater);
+    m_thumbTokens.insert(path, tok);
+    m_thumbLoadingPaths.insert(path);
+    m_thumbPool->start(ldr);
 }
 
 // Handle the completion of a thumbnail load.  Save the pixmap to the cache
@@ -641,9 +733,11 @@ void PhotoTriageWindow::startNextThumbnailLoader()
 void PhotoTriageWindow::onThumbnailLoaded(int index, const QString &path, const QImage &image)
 {
     Q_UNUSED(index);
-    // Remove the path from the loading set.  This ensures that future
-    // requests for this thumbnail can proceed if the row shifts.
+    // Remove the path from the loading set and drop its spent token.  This
+    // ensures that future requests for this thumbnail can proceed if the row
+    // shifts.
     m_thumbLoadingPaths.remove(path);
+    m_thumbTokens.remove(path);
     // Cache the pixmap if valid
     QPixmap pixmap = QPixmap::fromImage(image);
     if (!pixmap.isNull()) {
@@ -661,8 +755,6 @@ void PhotoTriageWindow::onThumbnailLoaded(int index, const QString &path, const 
             }
         }
     }
-    // Launch the next thumbnail loader from the pending queue, if any
-    startNextThumbnailLoader();
 }
 
 void PhotoTriageWindow::performMove(const QString &action)
@@ -735,6 +827,17 @@ void PhotoTriageWindow::performMove(const QString &action)
     m_preloaded.remove(removedKey);
     m_loading.remove(removedKey);
     m_fullRequested.remove(removedKey);
+    // Abandon any in-flight decode for the file we're moving away from: cancel
+    // its preview token and the current full-quality decode (which targeted it).
+    if (m_imgTokens.contains(removedKey)) {
+        if (m_imgTokens.value(removedKey)) m_imgTokens.value(removedKey)->store(true);
+        m_imgTokens.remove(removedKey);
+    }
+    if (m_fullToken) {
+        m_fullToken->store(true);
+        m_fullToken.reset();
+    }
+    m_fullQualityTimer->stop();
     // Keep the thumbnail cached: the file content is unchanged, so if this
     // image is restored via undo the list row shows its real icon immediately.
     // Update the file list widget: remove the corresponding item instead of
@@ -839,6 +942,10 @@ void PhotoTriageWindow::undoLastAction()
     // a full-quality decode if the retained copy was only a fast RAW preview.
     m_loading.remove(restoredKey);
     m_fullRequested.remove(restoredKey);
+    if (m_imgTokens.contains(restoredKey)) {
+        if (m_imgTokens.value(restoredKey)) m_imgTokens.value(restoredKey)->store(true);
+        m_imgTokens.remove(restoredKey);
+    }
     // The thumbnail is kept (file content is unchanged) so the restored row
     // can show its real icon immediately rather than a generic placeholder.
     // Insert the restored entry into the file list widget instead of rebuilding all items.

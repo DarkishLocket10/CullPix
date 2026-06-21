@@ -12,15 +12,17 @@
 #include <vector>
 #include <deque>
 #include <QSet>
-#include <QQueue>
+
+#include "imageloader.h"   // ImageLoader + CancelToken
 
 class QLabel;
 class QPushButton;
 class QStatusBar;
-class ImageLoader;
 class ImageView;
 class QListWidget;
 class QAction;
+class QThreadPool;
+class QTimer;
 
 // Forward declarations for asynchronous file worker
 struct FileTask;
@@ -68,6 +70,14 @@ private slots:
     void undoLastAction();
     void onImagePreloaded(int index, const QString &path, const QImage &image, bool fullQuality);
 
+    // Debounced upgrade of the *current* image to full display quality. Armed by
+    // displayCurrentImage() and only fired once the user settles, so scrubbing
+    // through a folder never spawns a pile of full-resolution RAW demosaics.
+    void loadFullQualityForCurrent();
+
+    // A queued async file move could not be completed (e.g. write-protected card).
+    void onMoveFailed(const QString &source, const QString &destination);
+
     // Navigate to the next and previous images without making a keep/reject decision.
     void goToNextImage();
     void goToPreviousImage();
@@ -81,9 +91,19 @@ private:
     void loadSourceDirectory(const QString &directory);
     void displayCurrentImage();
     void ensurePreloadWindow();
-    void preloadNext();
     void performMove(const QString &action);
     static bool naturalLess(const QFileInfo &a, const QFileInfo &b);
+
+    // Launch a pooled, cancellable image decode (preview or full quality) and
+    // record its cancellation token so it can be abandoned later.
+    void startImageLoad(int index, const QString &key, bool fullQuality);
+    // Start a preview prefetch for index `i` unless it is already cached/loading.
+    void maybeStartPreview(int i);
+    // Launch a pooled, cancellable thumbnail decode for the side list.
+    void startThumbLoad(int index, const QString &path);
+    // Trip every in-flight load's cancellation token and reset all load state.
+    // Used when switching folders and on shutdown.
+    void cancelAllLoads();
 
     QPushButton* m_openButton = nullptr;
     QAction* m_openAct = nullptr; // menu action
@@ -118,6 +138,25 @@ private:
     // image (full RAW demosaic / full decode). Separate from m_loading so a
     // pending fast preview never blocks the full-quality upgrade.
     QSet<QString> m_fullRequested;
+
+    // Bounded thread pools that cap how many decodes run at once — the fix for
+    // the unbounded full-resolution RAW demosaics that used to exhaust memory.
+    // Heavy preview/full decodes run on m_decodePool; light side-list
+    // thumbnails on m_thumbPool so they never starve the visible image.
+    QThreadPool *m_decodePool = nullptr;
+    QThreadPool *m_thumbPool  = nullptr;
+
+    // Cancellation tokens for in-flight preview prefetches, keyed by path, so a
+    // load that drifts out of the preload window (or whose folder changed) can
+    // be abandoned. The single full-quality decode is tracked separately and
+    // superseded whenever a new current image needs one.
+    QHash<QString, CancelToken> m_imgTokens;
+    QHash<QString, CancelToken> m_thumbTokens;
+    CancelToken                 m_fullToken;
+
+    // Coalesces full-quality decode requests during rapid navigation.
+    QTimer *m_fullQualityTimer = nullptr;
+
     static constexpr int PRELOAD_DEPTH = 10;
 
     // Number of images behind the current index to keep preloaded in the
@@ -164,26 +203,10 @@ private:
     // loads.
     QSet<QString> m_thumbLoadingPaths;
 
-    // Queue of thumbnail indices awaiting loading. When thumbnails
-    // are missing from the cache, their indices are enqueued here and
-    // processed in a limited‑concurrency manner. This avoids
-    // spawning one thread per thumbnail and dramatically improves
-    // responsiveness when loading large folders.
-    QQueue<int> m_thumbPending;
-
-    // Maximum number of thumbnail loads to run concurrently. Keeping
-    // this number small prevents CPU and I/O saturation while still
-    // populating thumbnails quickly in the background.
-    static constexpr int MAX_THUMB_CONCURRENCY = 3;
-
-    // Kick off asynchronous thumbnail loading for any images that lack
-    // cached thumbnails. Populates m_thumbPending and starts up to
-    // MAX_THUMB_CONCURRENCY loaders immediately.
+    // Kick off asynchronous thumbnail loading for any images that lack cached
+    // thumbnails. Concurrency is bounded by m_thumbPool, so this can safely
+    // enqueue every missing thumbnail at once.
     void startThumbnailLoaders();
-
-    // Start the next queued thumbnail loader if fewer than
-    // MAX_THUMB_CONCURRENCY loads are currently running.
-    void startNextThumbnailLoader();
 
     // Slot to receive loaded thumbnails. Updates the cache and the
     // corresponding list item's icon.  Connected to ImageLoader::loaded for
