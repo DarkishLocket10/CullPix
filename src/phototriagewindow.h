@@ -15,12 +15,17 @@
 #include <QQueue>
 
 class QLabel;
+class QProgressBar;
 class QPushButton;
 class QStatusBar;
 class ImageLoader;
 class ImageView;
 class QListWidget;
 class QAction;
+class QDockWidget;
+class QToolBar;
+class QSlider;
+class QMenu;
 
 // Forward declarations for asynchronous file worker
 struct FileTask;
@@ -42,6 +47,7 @@ struct MoveAction
     QString originalPath;
     QString destinationPath;
     int index;
+    QString kind;   // "keep" or "discard" — lets undo adjust the right counter
     // Decoded pixels retained so undo can restore the photo instantly without
     // a synchronous re-decode. May be null (e.g. for older entries, see
     // UNDO_IMAGE_RETAIN) in which case undo loads it asynchronously.
@@ -60,12 +66,15 @@ protected:
 
     void resizeEvent(QResizeEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
+    // Re-dock the timeline (instead of hiding) when its floating window is closed.
+    bool eventFilter(QObject *obj, QEvent *event) override;
 
 private slots:
     void chooseSourceFolder();
     void handleMoveKeep();
     void handleMoveReject();
     void undoLastAction();
+    void toggleCompare();   // enter/leave side-by-side compare
     void onImagePreloaded(int index, const QString &path, const QImage &image, bool fullQuality);
 
     // Navigate to the next and previous images without making a keep/reject decision.
@@ -82,11 +91,40 @@ private:
     void displayCurrentImage();
     void ensurePreloadWindow();
     void preloadNext();
-    void performMove(const QString &action);
+    // Move the image at m_images[idx] to keep/discard. Handles single mode and
+    // both panes of compare (with the cursor bookkeeping a cull triggers).
+    void performMoveAt(const QString &action, int idx);
+    // Show m_images[idx] in the given pane (cache hit, placeholder, or async
+    // full-quality load). Used for both the main and comparison panes.
+    void displayInPane(ImageView *view, int idx);
+    // Show a message in a pane and reset its content tracking, so the next
+    // displayInPane never skips the repaint that replaces the message.
+    void showPaneMessage(ImageView *view, const QString &text);
+    // Compare mode helpers.
+    void setCompareMode(bool on);              // owns all enter/exit choreography
+    void setComparePane(bool compareActive);   // choose, focus & highlight the active pane
+    int  activeIndex() const;                  // index the active pane is showing
+    void showShortcuts();                      // keyboard-shortcuts help dialog
+    // Refresh the status-bar counts label + progress bar from the kept/rejected
+    // counters and the remaining image count.
+    void refreshProgress();
+    // Lay the timeline list out as a single-row filmstrip (docked top/bottom)
+    // or a wrapping grid (left/right/floating), and sync the position radio.
+    void updateTimelineLayout();
+    // Highlight (and scroll to) the active pane's photo in the timeline,
+    // with signals blocked to avoid recursing into onFileListSelectionChanged.
+    void syncTimelineSelection();
+    // Single source of truth for the timeline grid geometry: cell size derives
+    // from the slider value, with extra height when names are shown.
+    void updateThumbGridMetrics();
+    // List caption for an image, per the "Show Image Names" toggle.
+    QString itemLabel(const QFileInfo &fi) const;
+    // Apply accent-color or monochrome styling to the Keep/Reject/Undo buttons.
+    void applyButtonStyle();
     static bool naturalLess(const QFileInfo &a, const QFileInfo &b);
 
     QPushButton* m_openButton = nullptr;
-    QAction* m_openAct = nullptr; // menu action
+    QAction* m_openAct = nullptr; // File-menu Open action (owns Ctrl+O — always reachable)
     QString m_lastDir; // remember last directory
 
     // Populate the side file browser with the current set of images. This helper
@@ -141,15 +179,42 @@ private:
 
     // UI elements
     ImageView *m_imageView;
+    ImageView *m_compareView = nullptr;   // second pane, shown only in compare
+    bool m_compareMode = false;
+    int  m_compareIndex = -1;             // image shown in the compare pane
+    bool m_activeIsCompare = false;       // which pane Z/X/arrows act on
+    QPushButton *m_compareButton = nullptr;
+    QAction *m_compareAct = nullptr;      // Options-menu Compare toggle
+    // What each pane currently displays, so redundant repaints (which would
+    // reset the user's zoom/pan and redo a full-resolution pixmap conversion)
+    // and post-eviction quality downgrades can be skipped.
+    struct PaneContent {
+        QString path;
+        int     quality = -1;   // -1 none/message, 0 thumbnail, 1 fast preview, 2 full
+    };
+    QHash<ImageView*, PaneContent> m_paneShown;
     QStatusBar *m_statusBar;
     QPushButton *m_keepButton;
     QPushButton *m_rejectButton;
     QPushButton *m_undoButton;
 
-    // Side panel for browsing available images. This list displays
-    // thumbnails and filenames for all images in the current
-    // directory and allows the user to jump directly to any photo.
+    // Status-bar triage progress.
+    QLabel *m_countsLabel = nullptr;
+    QProgressBar *m_progressBar = nullptr;
+    int m_keptCount = 0;      // images sent to keep/ this session
+    int m_rejectedCount = 0;  // images sent to discard/ this session
+    // (The folder total is derived: kept + rejected + m_images.size().)
+
+    // Side panel ("timeline") for browsing available images, hosted in a dock
+    // widget so it can be moved to any edge, floated, or hidden.
     QListWidget *m_fileListWidget;
+    QDockWidget *m_timelineDock = nullptr;
+    QToolBar *m_toolBar = nullptr;          // bottom button bar ("Show Buttons" hides it)
+    QPushButton *m_timelineButton = nullptr; // quick show/hide on the toolbar
+    QSlider *m_thumbSlider = nullptr;        // thumbnail-size control in the dock
+    QHash<int, QAction*> m_timelinePosActions; // dock area -> position radio
+    bool m_showNames = false;   // show filenames under grid thumbnails (default off)
+    bool m_monochrome = false;  // neutral (no accent color) Keep/Reject/Undo buttons
 
     // Thumbnail cache keyed by absolute file path. Each entry stores a
     // QPixmap that represents a small preview. Caching prevents
@@ -175,6 +240,8 @@ private:
     // this number small prevents CPU and I/O saturation while still
     // populating thumbnails quickly in the background.
     static constexpr int MAX_THUMB_CONCURRENCY = 3;
+    // Thumbnails decode at this size so the zoomable grid stays crisp.
+    static constexpr int THUMB_PX = 160;
 
     // Kick off asynchronous thumbnail loading for any images that lack
     // cached thumbnails. Populates m_thumbPending and starts up to

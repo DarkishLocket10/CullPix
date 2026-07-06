@@ -24,8 +24,12 @@ ImageView::ImageView(QWidget *parent)
 
     setFrameShape(QFrame::NoFrame);
     setAlignment(Qt::AlignCenter);
-    // Left-drag pans when zoomed in; harmless at fit.
-    setDragMode(QGraphicsView::ScrollHandDrag);
+    // Pan is handled manually (mousePress/Move/Release) rather than via
+    // ScrollHandDrag: that mode forces a grab cursor across the whole view up
+    // to the window edge, which suppresses the OS resize cursor there. With
+    // NoDrag the view keeps a normal cursor on hover (so edges show the resize
+    // cursor) and shows the grab cursor only while actively dragging.
+    setDragMode(QGraphicsView::NoDrag);
     // We anchor zoom manually (see zoomBy) off each event's cursor position,
     // so no transformation anchor is needed; resizing keeps the view centered.
     setTransformationAnchor(QGraphicsView::NoAnchor);
@@ -84,6 +88,55 @@ void ImageView::showMessage(const QString &text)
     m_overlay->setGeometry(viewport()->rect());
     m_overlay->show();
     m_overlay->raise();
+    if (m_cornerWidget)            // keep the gear reachable over the message
+        m_cornerWidget->raise();
+}
+
+void ImageView::setCornerWidget(QWidget *w)
+{
+    m_cornerWidget = w;
+    if (w) {
+        w->setParent(viewport());
+        positionCornerWidget();
+        w->show();
+        w->raise();
+    }
+}
+
+void ImageView::positionCornerWidget()
+{
+    if (m_cornerWidget)
+        m_cornerWidget->move(viewport()->width() - m_cornerWidget->width() - 12, 12);
+}
+
+void ImageView::setActive(bool on)
+{
+    if (m_active == on)
+        return;
+    m_active = on;
+    // The ring is painted at fixed viewport coordinates, which the default
+    // minimal update mode would smear across the photo when scrolling (it
+    // blits the viewport and repaints only the exposed strips). Repaint the
+    // full viewport while the ring is up; restore the cheaper mode when not.
+    setViewportUpdateMode(on ? QGraphicsView::FullViewportUpdate
+                             : QGraphicsView::MinimalViewportUpdate);
+    viewport()->update();   // repaint the active border
+}
+
+void ImageView::drawForeground(QPainter *painter, const QRectF &rect)
+{
+    QGraphicsView::drawForeground(painter, rect);
+    if (!m_active)
+        return;
+    // Gentle accent ring around the active pane, drawn in viewport coordinates.
+    painter->save();
+    painter->setWorldMatrixEnabled(false);
+    painter->setRenderHint(QPainter::Antialiasing, true);
+    QPen pen(QColor("#2A9D8F"), 3);
+    painter->setPen(pen);
+    painter->setBrush(Qt::NoBrush);
+    painter->drawRect(QRectF(viewport()->rect()).adjusted(1.5, 1.5, -1.5, -1.5));
+    painter->restore();
 }
 
 void ImageView::fitToWindow()
@@ -149,6 +202,7 @@ void ImageView::resizeEvent(QResizeEvent *event)
     QGraphicsView::resizeEvent(event);
     if (m_overlay)
         m_overlay->setGeometry(viewport()->rect());
+    positionCornerWidget();
     if (m_fitMode)
         fitToWindow();
 }
@@ -189,6 +243,49 @@ void ImageView::mouseDoubleClickEvent(QMouseEvent *event)
         fitToWindow();
     }
     event->accept();
+}
+
+void ImageView::mousePressEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::LeftButton)
+        emit activated();   // clicking a pane makes it the active one (compare)
+    // Begin a drag-to-pan. The grab cursor is shown only now (not on hover),
+    // so a plain hover keeps the normal cursor and the OS resize cursor can
+    // appear at the window edges.
+    if (event->button() == Qt::LeftButton && m_item) {
+        m_panning = true;
+        m_panLast = event->position().toPoint();
+        viewport()->setCursor(Qt::ClosedHandCursor);
+        event->accept();
+        return;
+    }
+    QGraphicsView::mousePressEvent(event);
+}
+
+void ImageView::mouseMoveEvent(QMouseEvent *event)
+{
+    if (m_panning) {
+        const QPoint p = event->position().toPoint();
+        const QPoint d = p - m_panLast;
+        m_panLast = p;
+        // No-op at fit (scrollbars have no range); pans once zoomed in.
+        horizontalScrollBar()->setValue(horizontalScrollBar()->value() - d.x());
+        verticalScrollBar()->setValue(verticalScrollBar()->value() - d.y());
+        event->accept();
+        return;
+    }
+    QGraphicsView::mouseMoveEvent(event);
+}
+
+void ImageView::mouseReleaseEvent(QMouseEvent *event)
+{
+    if (m_panning && event->button() == Qt::LeftButton) {
+        m_panning = false;
+        viewport()->unsetCursor();
+        event->accept();
+        return;
+    }
+    QGraphicsView::mouseReleaseEvent(event);
 }
 
 void ImageView::keyPressEvent(QKeyEvent *event)

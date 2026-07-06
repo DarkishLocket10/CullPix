@@ -26,6 +26,15 @@ public:
     // Show centered text (e.g. "Loading…", "No images.") over a blank
     // background, covering any previous image.
     void showMessage(const QString &text);
+    // Overlay a small widget in the top-right corner (e.g. an Options gear),
+    // kept above the message overlay and repositioned on resize.
+    void setCornerWidget(QWidget *w);
+    // Draw (or clear) a gentle accent border marking this as the active pane
+    // in side-by-side compare.
+    void setActive(bool on);
+
+signals:
+    void activated();   // emitted when the user clicks this view
 
 public slots:
     void fitToWindow();   // scale so the whole image is visible
@@ -35,7 +44,11 @@ protected:
     void resizeEvent(QResizeEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
     bool viewportEvent(QEvent *event) override;            // trackpad pinch
+    void drawForeground(QPainter *painter, const QRectF &rect) override; // active border
     void mouseDoubleClickEvent(QMouseEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;     // start drag-to-pan
+    void mouseMoveEvent(QMouseEvent *event) override;      // pan while dragging
+    void mouseReleaseEvent(QMouseEvent *event) override;   // end drag-to-pan
     void keyPressEvent(QKeyEvent *event) override;
 
 private:
@@ -45,9 +58,14 @@ private:
     // anchorViewPos fixed on screen — i.e. zoom about the cursor.
     void  zoomBy(qreal factor, const QPointF &anchorViewPos);
     void  updateSmoothing();       // smooth when downscaling, nearest at >=1:1
+    void  positionCornerWidget();  // keep the corner widget top-right
 
     QGraphicsScene      *m_scene = nullptr;
     QGraphicsPixmapItem *m_item = nullptr;
     QLabel              *m_overlay = nullptr;   // centered message text
+    QWidget             *m_cornerWidget = nullptr;  // e.g. Options gear (top-right)
     bool                 m_fitMode = true;
+    bool                 m_panning = false;     // mid drag-to-pan
+    QPoint               m_panLast;             // last cursor pos while panning
+    bool                 m_active = false;      // active pane in compare mode
 };

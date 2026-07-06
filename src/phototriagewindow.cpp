@@ -13,6 +13,7 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QStatusBar>
+#include <QProgressBar>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QSplitter>
@@ -21,6 +22,12 @@
 #include <QShortcut>
 #include <QKeySequence>
 #include <QToolBar>
+#include <QDockWidget>
+#include <QMenuBar>
+#include <QMenu>
+#include <QActionGroup>
+#include <QListView>
+#include <QSlider>
 #include <QMessageBox>
 #include <QResizeEvent>
 #include <QCloseEvent>
@@ -43,36 +50,115 @@
 
 
 
+// Flat "pill" stylesheet shared by the toolbar buttons. Rules are ordered so
+// :checked (and :checked:hover) outrank :hover — with equal specificity, the
+// last matching rule wins in Qt stylesheets, so a checked button must keep its
+// "on" color while hovered.
+static QString pillSheet(const char *base, const char *hover, const char *pressed,
+                         const char *checked = nullptr, const char *checkedHover = nullptr)
+{
+    QString s = QStringLiteral(
+        "QPushButton { background-color:%1; color:#FFFFFF; border:none; "
+        "border-radius:6px; padding:8px 16px; font-weight:600; } "
+        "QPushButton:hover { background-color:%2; } "
+        "QPushButton:pressed { background-color:%3; }")
+        .arg(QLatin1String(base), QLatin1String(hover), QLatin1String(pressed));
+    if (checked) {
+        s += QStringLiteral(" QPushButton:checked { background-color:%1; } "
+                            "QPushButton:checked:hover { background-color:%2; }")
+             .arg(QLatin1String(checked),
+                  QLatin1String(checkedHover ? checkedHover : checked));
+    }
+    return s;
+}
+
+// Neutral (untinted) toolbar buttons; checkable ones get the teal "on" state.
+static QString neutralPillSheet(bool checkable)
+{
+    return checkable ? pillSheet("#272b33", "#23272e", "#1f2329", "#2A9D8F", "#21867A")
+                     : pillSheet("#272b33", "#23272e", "#1f2329");
+}
+
 PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     : QMainWindow(parent)
 {
-    setWindowTitle(QStringLiteral("Photo‑Triage"));
+    setWindowTitle(QStringLiteral("CullPix"));
     resize(1000, 700);
 
     QString appStyle = R"(
         QMainWindow {
             background-color: #121212;
             color: #E0E0E0;
-            font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+            font-family: "SF Pro Text", "Helvetica Neue", "Segoe UI", Arial, sans-serif;
             font-size: 14px;
         }
         QStatusBar {
-            background-color: #1E1E1E;
-            color: #E0E0E0;
-            border-top: 1px solid #333;
+            background-color: #161618;
+            color: #B8BCC2;
+            border-top: 1px solid #2A2A2E;
+            padding: 2px 8px;
         }
+        QStatusBar::item { border: none; }
         QListWidget {
-            background-color: #1A1A1A; /* someone come get lex luthor lol. */
+            background-color: #1A1A1A;
             color: #CCCCCC;
             border: none;
         }
         QListWidget::item {
             padding: 8px;
-            margin: 0px;
+            margin: 2px 4px;
+            border-radius: 6px;
         }
         QListWidget::item:selected {
             background-color: #264653;
             color: #FFFFFF;
+        }
+        QProgressBar {
+            background-color: #2C2C2C;
+            border: none;
+            border-radius: 3px;
+        }
+        QProgressBar::chunk {
+            background-color: #2A9D8F;
+            border-radius: 3px;
+        }
+        QScrollBar:vertical { background: transparent; width: 10px; margin: 2px; }
+        QScrollBar::handle:vertical { background: #3A3F47; border-radius: 5px; min-height: 28px; }
+        QScrollBar::handle:vertical:hover { background: #4A505A; }
+        QScrollBar:horizontal { background: transparent; height: 10px; margin: 2px; }
+        QScrollBar::handle:horizontal { background: #3A3F47; border-radius: 5px; min-width: 28px; }
+        QScrollBar::handle:horizontal:hover { background: #4A505A; }
+        QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
+        QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
+        QSlider::groove:horizontal { height: 4px; background: #2C2C2C; border-radius: 2px; }
+        QSlider::sub-page:horizontal { background: #2A9D8F; border-radius: 2px; }
+        QSlider::handle:horizontal { background: #E0E0E0; width: 14px; margin: -6px 0; border-radius: 7px; }
+        QSlider::handle:horizontal:hover { background: #FFFFFF; }
+        QToolTip {
+            background-color: #1E1E1E; color: #E0E0E0;
+            border: 1px solid #3A3F47; border-radius: 4px; padding: 4px 6px;
+        }
+        QMenu {
+            background-color: #1E1E1E; color: #E0E0E0;
+            border: 1px solid #3A3F47; border-radius: 6px; padding: 4px;
+        }
+        QMenu::item { padding: 6px 24px 6px 12px; border-radius: 4px; }
+        QMenu::item:selected { background-color: #2A9D8F; color: #FFFFFF; }
+        QMenu::separator { height: 1px; background: #3A3F47; margin: 4px 8px; }
+        QToolBar {
+            background: #161618;
+            border: none;
+            border-top: 1px solid #2A2A2E;
+            padding: 0;
+        }
+        QDockWidget {
+            color: #C2C6CC;
+            font-weight: 600;
+        }
+        QDockWidget::title {
+            background: #161618;
+            padding: 7px 10px;
+            border-bottom: 1px solid #2A2A2E;
         }
     )";
     qApp->setStyleSheet(appStyle);
@@ -82,27 +168,99 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     // left pane shows a thumbnail list of images; the right pane displays
     // the currently selected photo.
     m_fileListWidget = new QListWidget(this);
-    m_fileListWidget->setViewMode(QListView::ListMode);
-    m_fileListWidget->setIconSize(QSize(80, 80));
-    m_fileListWidget->setUniformItemSizes(false);
+    m_fileListWidget->setViewMode(QListView::IconMode);      // grid of thumbnails
+    m_fileListWidget->setMovement(QListView::Static);        // no drag-rearrange
+    m_fileListWidget->setResizeMode(QListView::Adjust);      // re-flow the grid on resize
+    m_fileListWidget->setUniformItemSizes(true);
     m_fileListWidget->setSelectionMode(QAbstractItemView::SingleSelection);
+    // Icon and grid sizes are set by updateThumbGridMetrics() when the size
+    // slider initialises below.
     connect(m_fileListWidget, &QListWidget::currentRowChanged,
             this, &PhotoTriageWindow::onFileListSelectionChanged);
 
     // Zoomable/pannable image view: renders at physical pixels (sharp on
     // high-DPI), pinch / Cmd+wheel / double-click to zoom, 1:1 for real pixels.
     m_imageView = new ImageView(this);
+    m_compareView = new ImageView(this);
+    m_compareView->hide();   // shown only in side-by-side compare
+    m_imageView->setAccessibleName(tr("Main photo"));
+    m_compareView->setAccessibleName(tr("Comparison photo"));
 
-    QSplitter *splitter = new QSplitter(this);
-    splitter->setOrientation(Qt::Horizontal);
-    splitter->addWidget(m_fileListWidget);
-    splitter->addWidget(m_imageView);
-    splitter->setStretchFactor(0, 0);
-    splitter->setStretchFactor(1, 1);
-    setCentralWidget(splitter);
+    QSplitter *centralSplit = new QSplitter(Qt::Horizontal, this);
+    centralSplit->addWidget(m_imageView);
+    centralSplit->addWidget(m_compareView);
+    centralSplit->setStretchFactor(0, 1);
+    centralSplit->setStretchFactor(1, 1);
+    centralSplit->setChildrenCollapsible(false);
+    setCentralWidget(centralSplit);
+
+    // Clicking a pane makes it the active one (for Z/X) in compare mode.
+    connect(m_imageView, &ImageView::activated, this, [this]{ setComparePane(false); });
+    connect(m_compareView, &ImageView::activated, this, [this]{ setComparePane(true); });
+
+    // The timeline (file browser) lives in a dock widget so the user can move
+    // it to any edge, float it as its own window, or hide it. It lays photos
+    // out as a wrapping grid (or a single-row filmstrip when docked top/bottom)
+    // and carries a thumbnail-size slider that travels with it when floated.
+    m_timelineDock = new QDockWidget(tr("Timeline"), this);
+    m_timelineDock->setObjectName(QStringLiteral("timelineDock"));
+    m_timelineDock->setAllowedAreas(Qt::AllDockWidgetAreas);
+    m_timelineDock->setFeatures(QDockWidget::DockWidgetMovable
+                                | QDockWidget::DockWidgetFloatable
+                                | QDockWidget::DockWidgetClosable);
+
+    QWidget *timelinePanel = new QWidget;
+    QVBoxLayout *tlLayout = new QVBoxLayout(timelinePanel);
+    tlLayout->setContentsMargins(0, 0, 0, 0);
+    tlLayout->setSpacing(0);
+    tlLayout->addWidget(m_fileListWidget, 1);
+
+    QWidget *sizeBar = new QWidget;
+    QHBoxLayout *sizeRow = new QHBoxLayout(sizeBar);
+    sizeRow->setContentsMargins(8, 4, 8, 4);
+    QLabel *sizeLabel = new QLabel(tr("Size"));
+    sizeLabel->setStyleSheet(QStringLiteral("color:#9AA0A6;"));
+    m_thumbSlider = new QSlider(Qt::Horizontal);
+    m_thumbSlider->setRange(64, THUMB_PX);
+    m_thumbSlider->setToolTip(tr("Thumbnail size"));
+    m_thumbSlider->setAccessibleName(tr("Thumbnail size"));
+    connect(m_thumbSlider, &QSlider::valueChanged,
+            this, &PhotoTriageWindow::updateThumbGridMetrics);
+    m_thumbSlider->setValue(96);   // fires the slot to set the initial grid metrics
+    sizeRow->addWidget(sizeLabel);
+    sizeRow->addWidget(m_thumbSlider, 1);
+    tlLayout->addWidget(sizeBar);
+    m_timelineDock->setWidget(timelinePanel);
+
+    addDockWidget(Qt::LeftDockWidgetArea, m_timelineDock);
+    // Re-dock instead of hiding when the floating timeline window is closed.
+    m_timelineDock->installEventFilter(this);
+    connect(m_timelineDock, &QDockWidget::dockLocationChanged,
+            this, &PhotoTriageWindow::updateTimelineLayout);
+    connect(m_timelineDock, &QDockWidget::topLevelChanged,
+            this, &PhotoTriageWindow::updateTimelineLayout);
+    updateTimelineLayout();
 
     // Status bar
     m_statusBar = statusBar();
+    m_statusBar->setSizeGripEnabled(false);
+
+    // Triage progress on the right of the status bar: a counts label and a slim
+    // progress bar (kept + rejected out of the folder's total).
+    m_countsLabel = new QLabel(this);
+    m_countsLabel->setStyleSheet(QStringLiteral("color:#9AA0A6;"));
+    m_progressBar = new QProgressBar(this);
+    m_progressBar->setTextVisible(false);
+    m_progressBar->setFixedSize(140, 6);
+    m_progressBar->setRange(0, 1);
+    m_progressBar->setValue(0);
+    QWidget *statusRight = new QWidget(this);
+    QHBoxLayout *statusRightLayout = new QHBoxLayout(statusRight);
+    statusRightLayout->setContentsMargins(0, 0, 8, 0);
+    statusRightLayout->setSpacing(12);
+    statusRightLayout->addWidget(m_countsLabel);
+    statusRightLayout->addWidget(m_progressBar);
+    m_statusBar->addPermanentWidget(statusRight);
 
     // Buttons with contemporary styling. Each button uses a distinct accent
     // color to convey its purpose. A green tone is used for "Keep", a
@@ -110,33 +268,21 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     m_keepButton = new QPushButton(tr("Keep (Z)"));
     m_rejectButton = new QPushButton(tr("Reject (X)"));
     m_undoButton = new QPushButton(tr("Undo (U)"));
+    m_compareButton = new QPushButton(tr("Compare (C)"));
+    m_compareButton->setCheckable(true);
+    m_compareButton->setAutoDefault(false);
+    m_compareButton->setStyleSheet(neutralPillSheet(/*checkable=*/true));
 
-    m_keepButton->setStyleSheet("QPushButton { background-color: #2A9D8F; color: #FFFFFF; "
-                                 "border: none; border-radius: 6px; padding: 8px 16px; "
-                                 "font-weight: 600; } "
-                                 "QPushButton:hover { background-color: #21867A; } "
-                                 "QPushButton:pressed { background-color: #1E745F; }");
-    m_rejectButton->setStyleSheet("QPushButton { background-color: #E76F51; color: #FFFFFF; "
-                                 "border: none; border-radius: 6px; padding: 8px 16px; "
-                                 "font-weight: 600; } "
-                                 "QPushButton:hover { background-color: #CF6045; } "
-                                 "QPushButton:pressed { background-color: #B25037; }");
-    m_undoButton->setStyleSheet("QPushButton { background-color: #F4A261; color: #FFFFFF; "
-                                 "border: none; border-radius: 6px; padding: 8px 16px; "
-                                 "font-weight: 600; } "
-                                 "QPushButton:hover { background-color: #D68F54; } "
-                                 "QPushButton:pressed { background-color: #BB7A46; }");
+    applyButtonStyle();   // accent colors by default; monochrome via Options
 
-    m_openButton = new QPushButton(tr("Open Folder..."));
-    m_openButton->setToolTip(tr("Open a folder of images (Ctrl+O)"));
-    m_openButton->setShortcut(QKeySequence::Open);
+    m_openButton = new QPushButton(tr("Open Folder…"));
+    // NativeText renders the platform key (⌘O on macOS, Ctrl+O elsewhere).
+    m_openButton->setToolTip(tr("Open a folder of images (%1)")
+        .arg(QKeySequence(QKeySequence::Open).toString(QKeySequence::NativeText)));
+    // Ctrl+O lives on the File-menu action, not this button: a shortcut on the
+    // button goes dead whenever "Show Buttons" hides the toolbar.
     m_openButton->setAutoDefault(false);
-
-    m_openButton->setStyleSheet("QPushButton { background-color: #272b33; color: #FFFFFF; "
-                                "border: none; border-radius: 6px; padding: 8px 16px; "
-                                "font-weight: 600; } "
-                                "QPushButton:hover { background-color: #23272e; } "
-                                "QPushButton:pressed { background-color: #1f2329; }");
+    m_openButton->setStyleSheet(neutralPillSheet(/*checkable=*/false));
 
 
     connect(m_openButton, &QPushButton::clicked, this, &PhotoTriageWindow::chooseSourceFolder);
@@ -145,21 +291,170 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     connect(m_keepButton, &QPushButton::clicked, this, &PhotoTriageWindow::handleMoveKeep);
     connect(m_rejectButton, &QPushButton::clicked, this, &PhotoTriageWindow::handleMoveReject);
     connect(m_undoButton, &QPushButton::clicked, this, &PhotoTriageWindow::undoLastAction);
+    connect(m_compareButton, &QPushButton::clicked, this, &PhotoTriageWindow::toggleCompare);
 
+    // Tooltips (with shortcut hints) and accessible names for discoverability
+    // and screen readers.
+    m_keepButton->setToolTip(tr("Keep — move to the keep/ folder  (Z)"));
+    m_rejectButton->setToolTip(tr("Reject — move to the discard/ folder  (X)"));
+    m_undoButton->setToolTip(tr("Undo the last move  (U or ⌘Z)"));
+    m_compareButton->setToolTip(tr("Compare two photos side by side  (C)"));
+    m_keepButton->setAccessibleName(tr("Keep"));
+    m_rejectButton->setAccessibleName(tr("Reject"));
+    m_undoButton->setAccessibleName(tr("Undo"));
+    m_compareButton->setAccessibleName(tr("Compare"));
+    m_openButton->setAccessibleName(tr("Open folder"));
+
+    // Bottom bar: cull actions on the left, the Timeline toggle on the right.
+    // "Show Buttons" hides the whole bar; Options stay reachable via the gear
+    // overlay and the menu bar.
     QWidget *toolbarWidget = new QWidget(this);
     QHBoxLayout *hbox = new QHBoxLayout(toolbarWidget);
-    hbox->insertWidget(0, m_openButton);
     hbox->setContentsMargins(10, 8, 10, 8);
     hbox->setSpacing(12);
+    hbox->addWidget(m_openButton);
     hbox->addWidget(m_keepButton);
     hbox->addWidget(m_rejectButton);
     hbox->addWidget(m_undoButton);
+    hbox->addWidget(m_compareButton);
     hbox->addStretch(1);
+
+    // Quick show/hide for the timeline, right-aligned on the toolbar.
+    m_timelineButton = new QPushButton(tr("Timeline"));
+    m_timelineButton->setCheckable(true);
+    m_timelineButton->setChecked(true);
+    m_timelineButton->setAutoDefault(false);
+    m_timelineButton->setToolTip(tr("Show or hide the timeline  (T)"));
+    m_timelineButton->setAccessibleName(tr("Toggle timeline"));
+    m_timelineButton->setStyleSheet(neutralPillSheet(/*checkable=*/true));
+    // Drive the dock through its own toggleViewAction (also in the Options
+    // menu) so Qt keeps one canonical visibility state — visibilityChanged
+    // also fires when the dock is merely obscured, so tracking it directly
+    // would let the button drift out of sync.
+    QAction *timelineToggle = m_timelineDock->toggleViewAction();
+    connect(m_timelineButton, &QPushButton::clicked, timelineToggle, &QAction::trigger);
+    connect(timelineToggle, &QAction::toggled, m_timelineButton, &QPushButton::setChecked);
+    hbox->addWidget(m_timelineButton);
+
     toolbarWidget->setLayout(hbox);
-    QToolBar *tb = new QToolBar(this);
-    tb->setMovable(false);
-    tb->addWidget(toolbarWidget);
-    addToolBar(Qt::BottomToolBarArea, tb);
+    m_toolBar = new QToolBar(this);
+    m_toolBar->setMovable(false);
+    m_toolBar->addWidget(toolbarWidget);
+    addToolBar(Qt::BottomToolBarArea, m_toolBar);
+
+    // ---- Menu bar (native macOS menu; always reachable even when chrome is hidden) ----
+    QMenu *fileMenu = menuBar()->addMenu(tr("File"));
+    m_openAct = fileMenu->addAction(tr("Open Folder…"));
+    // The menu action is always reachable (unlike the hideable toolbar), so it
+    // owns the standard Open shortcut.
+    m_openAct->setShortcut(QKeySequence::Open);
+    connect(m_openAct, &QAction::triggered, this, &PhotoTriageWindow::chooseSourceFolder);
+
+    QMenu *viewMenu = menuBar()->addMenu(tr("Options"));
+
+    m_compareAct = viewMenu->addAction(tr("Compare"));
+    m_compareAct->setCheckable(true);
+    connect(m_compareAct, &QAction::triggered, this, &PhotoTriageWindow::toggleCompare);
+    viewMenu->addSeparator();
+
+    // Timeline position (Top / Bottom / Left / Right).
+    QMenu *posMenu = viewMenu->addMenu(tr("Timeline Position"));
+    QActionGroup *posGroup = new QActionGroup(this);
+    const struct { const char *label; Qt::DockWidgetArea area; } kPositions[] = {
+        { "Top",    Qt::TopDockWidgetArea },
+        { "Bottom", Qt::BottomDockWidgetArea },
+        { "Left",   Qt::LeftDockWidgetArea },
+        { "Right",  Qt::RightDockWidgetArea },
+    };
+    for (const auto &p : kPositions) {
+        QAction *a = posMenu->addAction(tr(p.label));
+        a->setCheckable(true);
+        posGroup->addAction(a);
+        if (p.area == Qt::LeftDockWidgetArea)
+            a->setChecked(true);
+        const Qt::DockWidgetArea area = p.area;
+        connect(a, &QAction::triggered, this, [this, area]{
+            addDockWidget(area, m_timelineDock);
+            m_timelineDock->show();
+        });
+        m_timelinePosActions.insert(static_cast<int>(area), a);
+    }
+
+    QAction *floatAct = viewMenu->addAction(tr("Timeline in Separate Window"));
+    connect(floatAct, &QAction::triggered, this, [this]{
+        m_timelineDock->setFloating(true);
+        m_timelineDock->show();
+    });
+
+    QAction *showTimelineAct = m_timelineDock->toggleViewAction();
+    showTimelineAct->setText(tr("Show Timeline"));
+    showTimelineAct->setShortcut(QKeySequence(QStringLiteral("T")));
+    viewMenu->addAction(showTimelineAct);
+
+    viewMenu->addSeparator();
+
+    // Hide the whole bottom bar to reclaim photo space (Options stays reachable
+    // via the gear overlay and the macOS menu bar).
+    QAction *showButtonsAct = m_toolBar->toggleViewAction();
+    showButtonsAct->setText(tr("Show Buttons"));
+    viewMenu->addAction(showButtonsAct);
+
+    QAction *showInfoAct = viewMenu->addAction(tr("Show Info Bar"));
+    showInfoAct->setCheckable(true);
+    showInfoAct->setChecked(true);
+    connect(showInfoAct, &QAction::toggled, this,
+            [this](bool on){ m_statusBar->setVisible(on); });
+
+    QAction *showNamesAct = viewMenu->addAction(tr("Show Image Names"));
+    showNamesAct->setCheckable(true);
+    showNamesAct->setChecked(m_showNames);   // hidden by default
+    connect(showNamesAct, &QAction::toggled, this, [this](bool on) {
+        m_showNames = on;
+        const int n = m_fileListWidget->count();
+        for (int i = 0; i < n && i < static_cast<int>(m_images.size()); ++i)
+            if (QListWidgetItem *it = m_fileListWidget->item(i))
+                it->setText(itemLabel(m_images[i]));
+        updateThumbGridMetrics();
+    });
+
+    QAction *monoAct = viewMenu->addAction(tr("Monochrome Buttons"));
+    monoAct->setCheckable(true);
+    monoAct->setChecked(m_monochrome);
+    connect(monoAct, &QAction::toggled, this, [this](bool on) {
+        m_monochrome = on;
+        applyButtonStyle();
+    });
+
+    // Thumbnail size presets (the timeline's slider gives fine control).
+    QMenu *sizeMenu = viewMenu->addMenu(tr("Thumbnail Size"));
+    const struct { const char *label; int px; } kSizes[] = {
+        { "Small", 72 }, { "Medium", 104 }, { "Large", 150 },
+    };
+    for (const auto &s : kSizes) {
+        const int px = s.px;
+        sizeMenu->addAction(tr(s.label), this, [this, px]{
+            if (m_thumbSlider) m_thumbSlider->setValue(px);
+        });
+    }
+
+    viewMenu->addSeparator();
+    QAction *shortcutsAct = viewMenu->addAction(tr("Keyboard Shortcuts…"));
+    connect(shortcutsAct, &QAction::triggered, this, &PhotoTriageWindow::showShortcuts);
+
+    // Options live in a small, always-visible gear tucked into the image's
+    // top-right corner, so they're reachable even when the toolbar is hidden
+    // and don't take up photo real estate.
+    QPushButton *gearButton = new QPushButton(QStringLiteral("⚙"));
+    gearButton->setMenu(viewMenu);
+    gearButton->setFixedSize(32, 32);
+    gearButton->setCursor(Qt::PointingHandCursor);
+    gearButton->setToolTip(tr("Options"));
+    gearButton->setAccessibleName(tr("Options"));
+    gearButton->setStyleSheet("QPushButton { background-color: rgba(45,47,54,205); color:#E8E8EA; "
+                              "border:1px solid rgba(255,255,255,38); border-radius:16px; font-size:16px; } "
+                              "QPushButton:hover { background-color: rgba(72,78,88,230); } "
+                              "QPushButton::menu-indicator { width:0px; }");
+    m_imageView->setCornerWidget(gearButton);
 
     // Shortcuts
     // new QShortcut(QKeySequence(QStringLiteral("Z")), this, SLOT(handleMoveKeep()));
@@ -175,6 +470,11 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     connect(sReject, &QShortcut::activated, this, &PhotoTriageWindow::handleMoveReject);
 
 
+    auto sCompare = new QShortcut(QKeySequence(QStringLiteral("C")), this);
+    sCompare->setAutoRepeat(false);
+    sCompare->setContext(Qt::ApplicationShortcut);
+    connect(sCompare, &QShortcut::activated, this, &PhotoTriageWindow::toggleCompare);
+
     new QShortcut(QKeySequence(QStringLiteral("U")), this, SLOT(undoLastAction()));
     new QShortcut(QKeySequence(QStringLiteral("Ctrl+Z")), this, SLOT(undoLastAction()));
     new QShortcut(QKeySequence(QStringLiteral("O")), this, SLOT(chooseSourceFolder()));
@@ -182,11 +482,22 @@ PhotoTriageWindow::PhotoTriageWindow(QWidget *parent)
     new QShortcut(QKeySequence(Qt::Key_Right), this, SLOT(goToNextImage()));
     new QShortcut(QKeySequence(Qt::Key_Left), this, SLOT(goToPreviousImage()));
 
+    auto sEsc = new QShortcut(QKeySequence(Qt::Key_Escape), this);
+    sEsc->setContext(Qt::ApplicationShortcut);
+    connect(sEsc, &QShortcut::activated, this, [this]{ if (m_compareMode) toggleCompare(); });
+
+    auto sHelp = new QShortcut(QKeySequence(QStringLiteral("?")), this);
+    sHelp->setContext(Qt::ApplicationShortcut);
+    connect(sHelp, &QShortcut::activated, this, &PhotoTriageWindow::showShortcuts);
+
     // Ask for source folder on startup after event loop starts
     QTimer::singleShot(0, this, &PhotoTriageWindow::chooseSourceFolder);
 
     // Initialise asynchronous file worker
     m_fileWorker = new FileWorker();
+
+    // Show the empty-state prompt until a folder is chosen.
+    displayCurrentImage();
 }
 
 PhotoTriageWindow::~PhotoTriageWindow()
@@ -430,6 +741,11 @@ void PhotoTriageWindow::loadSourceDirectory(const QString &directory)
     m_loading.clear();
     m_fullRequested.clear();
     m_undoStack.clear();
+    m_keptCount = 0;
+    m_rejectedCount = 0;
+    m_paneShown.clear();
+    // Leave compare mode for the new folder.
+    setCompareMode(false);
     m_statusBar->clearMessage();
 
     displayCurrentImage();
@@ -445,43 +761,45 @@ void PhotoTriageWindow::loadSourceDirectory(const QString &directory)
     populateFileList();
 }
 
-void PhotoTriageWindow::displayCurrentImage()
+void PhotoTriageWindow::displayInPane(ImageView *view, int idx)
 {
-    if (m_currentIndex < 0 || m_currentIndex >= static_cast<int>(m_images.size())) {
-        m_imageView->showMessage(tr("No images."));
-        m_statusBar->showMessage(QString());
-        // Clear selection in file list when there are no images
-        if (m_fileListWidget) {
-            m_fileListWidget->blockSignals(true);
-            m_fileListWidget->setCurrentRow(-1);
-            m_fileListWidget->blockSignals(false);
-        }
+    if (!view)
+        return;
+    if (idx < 0 || idx >= static_cast<int>(m_images.size())) {
+        showPaneMessage(view, view == m_compareView ? tr("No other image") : tr("No images"));
         return;
     }
-    const QFileInfo &fi = m_images.at(m_currentIndex);
-    const QString key = fi.absoluteFilePath();
-
-    // Show the best image we have right now — a full-quality decode, a fast RAW
-    // preview (to be upgraded below), or the thumbnail / a "Loading…" message as
-    // an instant placeholder. The view renders at physical pixels and supports
-    // pinch / 1:1 zoom. We never evict here; ensurePreloadWindow() manages the
-    // sliding window, which keeps back-and-forth navigation (and undo) instant.
+    const QString key = m_images.at(idx).absoluteFilePath();
+    // Pick the best pixels available: full decode > fast RAW preview > thumbnail.
+    QImage best;
+    int quality = -1;   // matches PaneContent::quality
     if (m_preloaded.contains(key)) {
-        m_imageView->setImage(m_preloaded.value(key).image);
+        const CachedImage cached = m_preloaded.value(key);
+        best = cached.image;
+        quality = cached.full ? 2 : 1;
     } else if (m_thumbnailCache.contains(key)) {
-        m_imageView->setImage(m_thumbnailCache.value(key).toImage());
-    } else {
-        m_imageView->showMessage(tr("Loading…"));
+        best = m_thumbnailCache.value(key).toImage();
+        quality = 0;
+    }
+    // Repaint only on a real change: re-setting the same pixels would reset
+    // the user's zoom/pan and redo a full-resolution pixmap conversion, and a
+    // downgrade (e.g. after cache eviction) would degrade an image the view
+    // still holds.
+    const PaneContent shown = m_paneShown.value(view);
+    if (quality < 0) {
+        if (shown.path != key)
+            showPaneMessage(view, tr("Loading…"));
+    } else if (shown.path != key || shown.quality < quality) {
+        view->setImage(best);
+        m_paneShown.insert(view, PaneContent{key, quality});
     }
 
-    // Ensure the *current* image reaches full display quality: a full-resolution
-    // decode (JPEG) or full demosaic (RAW), off the UI thread, swapped in by
-    // onImagePreloaded(). This runs for a cache miss and for a cached fast RAW
-    // preview alike — but only ever for the image being viewed, never the
-    // prefetch ring (so a RAW folder won't fire many concurrent demosaics).
+    // Full-resolution decode / RAW demosaic, off the UI thread, swapped in by
+    // onImagePreloaded() — for whichever pane shows this path. Only the image(s)
+    // actually on screen are upgraded, never the prefetch ring.
     const bool haveFull = m_preloaded.contains(key) && m_preloaded.value(key).full;
     if (!haveFull && !m_fullRequested.contains(key)) {
-        ImageLoader *ldr = new ImageLoader(m_currentIndex, key, this, QSize(), /*fullQuality=*/true);
+        ImageLoader *ldr = new ImageLoader(idx, key, this, QSize(), /*fullQuality=*/true);
         connect(ldr, &ImageLoader::loaded,
                 this, &PhotoTriageWindow::onImagePreloaded,
                 Qt::QueuedConnection);
@@ -489,17 +807,161 @@ void PhotoTriageWindow::displayCurrentImage()
         m_fullRequested.insert(key);
         ldr->start();
     }
-    // Update status bar
-    m_statusBar->showMessage(tr("%1/%2 – %3").arg(m_currentIndex + 1).arg(m_images.size()).arg(fi.fileName()));
+}
 
-    // Highlight the current item in the side list.  Blocking signals prevents
-    // triggering onFileListSelectionChanged recursively.
-    if (m_fileListWidget) {
-        m_fileListWidget->blockSignals(true);
-        m_fileListWidget->setCurrentRow(m_currentIndex);
-        m_fileListWidget->scrollToItem(m_fileListWidget->currentItem(), QAbstractItemView::PositionAtCenter);
-        m_fileListWidget->blockSignals(false);
+void PhotoTriageWindow::displayCurrentImage()
+{
+    refreshProgress();
+    if (m_currentIndex < 0 || m_currentIndex >= static_cast<int>(m_images.size())) {
+        // Compare mode always exits before the folder can run dry (see
+        // performMoveAt / setCompareMode), so only the main pane needs the
+        // empty-state prompt.
+        showPaneMessage(m_imageView, tr("No images to cull\n\n"
+                                        "Press O or click “Open Folder” to choose a folder\n\n"
+                                        "Z keep     ·     X reject     ·     U undo     ·     ← → browse"));
+        m_statusBar->showMessage(QString());
+        if (m_fileListWidget) {
+            m_fileListWidget->blockSignals(true);
+            m_fileListWidget->setCurrentRow(-1);
+            m_fileListWidget->blockSignals(false);
+        }
+        return;
     }
+
+    displayInPane(m_imageView, m_currentIndex);
+    if (m_compareMode)
+        displayInPane(m_compareView, m_compareIndex);
+
+    // Status bar shows the active pane's filename (counts + progress are on
+    // the right).
+    m_statusBar->showMessage(m_images.at(activeIndex()).fileName());
+
+    // Highlight the photo Z/X would act on.
+    syncTimelineSelection();
+}
+
+QString PhotoTriageWindow::itemLabel(const QFileInfo &fi) const
+{
+    return m_showNames ? fi.fileName() : QString();
+}
+
+void PhotoTriageWindow::showPaneMessage(ImageView *view, const QString &text)
+{
+    view->showMessage(text);
+    // The message replaced the pane's pixels; never skip the next repaint.
+    m_paneShown.remove(view);
+}
+
+void PhotoTriageWindow::syncTimelineSelection()
+{
+    if (!m_fileListWidget)
+        return;
+    const int row = activeIndex();
+    // Already highlighted: skip, so refreshes (and re-clicks on the active
+    // pane) don't recenter the timeline scroll the user just positioned. The
+    // selection check keeps the self-heal: a Ctrl/Cmd-click can deselect the
+    // current row without changing it.
+    if (m_fileListWidget->currentRow() == row
+        && !m_fileListWidget->selectedItems().isEmpty())
+        return;
+    m_fileListWidget->blockSignals(true);
+    m_fileListWidget->setCurrentRow(row);
+    if (QListWidgetItem *item = m_fileListWidget->currentItem())
+        m_fileListWidget->scrollToItem(item, QAbstractItemView::PositionAtCenter);
+    m_fileListWidget->blockSignals(false);
+}
+
+void PhotoTriageWindow::updateThumbGridMetrics()
+{
+    if (!m_fileListWidget || !m_thumbSlider)
+        return;
+    const int v = m_thumbSlider->value();
+    m_fileListWidget->setIconSize(QSize(v, v));
+    m_fileListWidget->setGridSize(QSize(v + 20, v + (m_showNames ? 36 : 12)));
+}
+
+void PhotoTriageWindow::applyButtonStyle()
+{
+    if (m_monochrome) {
+        const QString s = pillSheet("#3A3F47", "#33373E", "#2B2F35");
+        m_keepButton->setStyleSheet(s);
+        m_rejectButton->setStyleSheet(s);
+        m_undoButton->setStyleSheet(s);
+    } else {
+        m_keepButton->setStyleSheet(pillSheet("#2A9D8F", "#21867A", "#1E745F"));
+        m_rejectButton->setStyleSheet(pillSheet("#E76F51", "#CF6045", "#B25037"));
+        m_undoButton->setStyleSheet(pillSheet("#F4A261", "#D68F54", "#BB7A46"));
+    }
+}
+
+void PhotoTriageWindow::refreshProgress()
+{
+    if (!m_countsLabel || !m_progressBar)
+        return;
+    // The folder total is derived, not stored: everything triaged plus
+    // everything left. This can never go stale when m_images changes.
+    const int done = m_keptCount + m_rejectedCount;
+    const int total = done + static_cast<int>(m_images.size());
+    if (total > 0) {
+        m_countsLabel->setText(tr("%1 kept    ·    %2 rejected    ·    %3 left")
+                                   .arg(m_keptCount)
+                                   .arg(m_rejectedCount)
+                                   .arg(static_cast<int>(m_images.size())));
+        m_progressBar->setRange(0, total);
+        m_progressBar->setValue(done);
+        m_countsLabel->show();
+        m_progressBar->show();
+    } else {
+        m_countsLabel->clear();
+        m_progressBar->hide();
+    }
+}
+
+void PhotoTriageWindow::updateTimelineLayout()
+{
+    if (!m_fileListWidget || !m_timelineDock)
+        return;
+    const bool floating = m_timelineDock->isFloating();
+    const Qt::DockWidgetArea area = dockWidgetArea(m_timelineDock);
+    // Single-row filmstrip when docked top/bottom; a wrapping grid otherwise
+    // (left/right docks and the floating window) so widening lays out a grid.
+    const bool filmstrip = !floating
+        && (area == Qt::TopDockWidgetArea || area == Qt::BottomDockWidgetArea);
+    m_fileListWidget->setFlow(QListView::LeftToRight);
+    m_fileListWidget->setWrapping(!filmstrip);
+    if (filmstrip) {
+        m_fileListWidget->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+        m_fileListWidget->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    } else {
+        m_fileListWidget->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        m_fileListWidget->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    }
+    // Keep the Options-menu position radio in sync when the dock is dragged.
+    if (!floating) {
+        if (QAction *a = m_timelinePosActions.value(static_cast<int>(area), nullptr))
+            a->setChecked(true);
+    }
+}
+
+bool PhotoTriageWindow::eventFilter(QObject *obj, QEvent *event)
+{
+    // Closing the floating timeline window re-docks it instead of hiding it.
+    // The close itself always proceeds — refusing it would cancel quit-time
+    // closeAllWindows() — and the re-dock runs queued, after the close
+    // completes; if the app is quitting, the event loop is gone before it
+    // fires. Not gated on spontaneous(): on platforms where Qt draws the dock
+    // title bar (Linux xcb/Wayland), its close button delivers a
+    // non-spontaneous close.
+    if (obj == m_timelineDock && event->type() == QEvent::Close
+        && m_timelineDock->isFloating()) {
+        QMetaObject::invokeMethod(this, [this] {
+            if (m_timelineDock->isFloating() && !m_timelineDock->isVisible()) {
+                m_timelineDock->setFloating(false);
+                m_timelineDock->show();
+            }
+        }, Qt::QueuedConnection);
+    }
+    return QMainWindow::eventFilter(obj, event);
 }
 
 int PhotoTriageWindow::indexFromPath(const QString &path) const
@@ -519,11 +981,16 @@ void PhotoTriageWindow::ensurePreloadWindow()
     }
     // Maintain a sliding window of preloaded images around the current index.  The
     // cache retains images within [currentIndex - PRELOAD_BACK_DEPTH, currentIndex + PRELOAD_DEPTH].
+    // The compare pane's photo is pinned regardless: it holds still while the
+    // main cursor moves, and evicting it would force a full re-decode (and a
+    // visible quality drop) on every subsequent refresh.
     for (auto it = m_preloaded.begin(); it != m_preloaded.end(); ) {
         const QString path = it.key();
         int idx = indexFromPath(path);
+        const bool pinned = m_compareMode && idx == m_compareIndex;
         // Keep images within the window; evict those too far behind or ahead
-        if (idx < m_currentIndex - PRELOAD_BACK_DEPTH || idx > m_currentIndex + PRELOAD_DEPTH) {
+        if (!pinned
+            && (idx < m_currentIndex - PRELOAD_BACK_DEPTH || idx > m_currentIndex + PRELOAD_DEPTH)) {
             it = m_preloaded.erase(it);
         } else {
             ++it;
@@ -579,6 +1046,12 @@ void PhotoTriageWindow::onImagePreloaded(int index, const QString &path, const Q
         && m_images.at(m_currentIndex).absoluteFilePath() == path) {
         displayCurrentImage();
     }
+    // Same for the compare pane — repaint it when its image (e.g. a RAW that
+    // just finished demosaicing) arrives, or it would show its preview forever.
+    if (m_compareMode && m_compareIndex >= 0 && m_compareIndex < static_cast<int>(m_images.size())
+        && m_images.at(m_compareIndex).absoluteFilePath() == path) {
+        displayInPane(m_compareView, m_compareIndex);
+    }
     ensurePreloadWindow();
 }
 
@@ -623,7 +1096,7 @@ void PhotoTriageWindow::startNextThumbnailLoader()
         if (m_thumbnailCache.contains(path) || m_thumbLoadingPaths.contains(path))
             continue;
         // Launch loader
-        ImageLoader *ldr = new ImageLoader(index, path, this, QSize(60, 60));
+        ImageLoader *ldr = new ImageLoader(index, path, this, QSize(THUMB_PX, THUMB_PX));
         connect(ldr, &ImageLoader::loaded,
                 this, &PhotoTriageWindow::onThumbnailLoaded,
                 Qt::QueuedConnection);
@@ -665,12 +1138,12 @@ void PhotoTriageWindow::onThumbnailLoaded(int index, const QString &path, const 
     startNextThumbnailLoader();
 }
 
-void PhotoTriageWindow::performMove(const QString &action)
+void PhotoTriageWindow::performMoveAt(const QString &action, int idx)
 {
-    if (m_currentIndex < 0 || m_currentIndex >= static_cast<int>(m_images.size())) {
+    if (idx < 0 || idx >= static_cast<int>(m_images.size())) {
         return;
     }
-    const QFileInfo fi = m_images.at(m_currentIndex);
+    const QFileInfo fi = m_images.at(idx);
     QString destDirPath;
     if (action == QLatin1String("keep")) {
         destDirPath = m_keepDir;
@@ -707,7 +1180,12 @@ void PhotoTriageWindow::performMove(const QString &action)
     MoveAction actionInfo;
     actionInfo.originalPath = fi.filePath();
     actionInfo.destinationPath = destPath;
-    actionInfo.index = m_currentIndex;
+    actionInfo.index = idx;
+    actionInfo.kind = action;
+    if (action == QLatin1String("keep"))
+        ++m_keptCount;
+    else
+        ++m_rejectedCount;
     // Retain the already-decoded image (and whether it was full quality) so
     // undo can restore it instantly, skipping the synchronous re-decode that
     // used to freeze the UI.
@@ -724,17 +1202,42 @@ void PhotoTriageWindow::performMove(const QString &action)
         m_undoStack[i].image = QImage();
     }
     // Remove from list
-    int removedIndex = m_currentIndex;
-    m_images.erase(m_images.begin() + removedIndex);
-    // Adjust index to show next image
-    if (m_currentIndex >= static_cast<int>(m_images.size())) {
-        m_currentIndex = static_cast<int>(m_images.size()) - 1;
-    }
-    // Remove the cache entry for the file that is being removed
+    const int removedIndex = idx;
     const QString removedKey = fi.absoluteFilePath();
+    m_images.erase(m_images.begin() + removedIndex);
     m_preloaded.remove(removedKey);
     m_loading.remove(removedKey);
     m_fullRequested.remove(removedKey);
+
+    // Fix up the cursor(s) after removing index `idx`.
+    if (!m_compareMode) {
+        if (m_currentIndex >= static_cast<int>(m_images.size()))
+            m_currentIndex = static_cast<int>(m_images.size()) - 1;
+    } else {
+        // The active pane (which culled) advances to the next photo; the other
+        // pane holds its photo. Then avoid both panes showing the same image.
+        int &active = m_activeIsCompare ? m_compareIndex : m_currentIndex;
+        int &other  = m_activeIsCompare ? m_currentIndex : m_compareIndex;
+        if (other > idx)
+            --other;
+        active = idx;
+        const int n = static_cast<int>(m_images.size());
+        if (n < 2) {
+            // Not enough left to compare: fall back to single view on the
+            // survivor (if any). Assign m_currentIndex directly — `active`
+            // and `other` alias different members depending on which pane
+            // culled, and the compare teardown resets m_compareIndex anyway.
+            setCompareMode(false);
+            m_currentIndex = n - 1;   // 0 for the survivor, -1 when empty
+        } else {
+            if (active >= n) active = n - 1;
+            if (other >= n) other = n - 1;
+            if (active == other) {
+                if (active + 1 < n) ++active;
+                else --active;
+            }
+        }
+    }
     // Keep the thumbnail cached: the file content is unchanged, so if this
     // image is restored via undo the list row shows its real icon immediately.
     // Update the file list widget: remove the corresponding item instead of
@@ -778,12 +1281,114 @@ void PhotoTriageWindow::performMove(const QString &action)
 
 void PhotoTriageWindow::handleMoveKeep()
 {
-    performMove(QStringLiteral("keep"));
+    performMoveAt(QStringLiteral("keep"), activeIndex());
 }
 
 void PhotoTriageWindow::handleMoveReject()
 {
-    performMove(QStringLiteral("discard"));
+    performMoveAt(QStringLiteral("discard"), activeIndex());
+}
+
+void PhotoTriageWindow::showShortcuts()
+{
+    QMessageBox box(this);
+    box.setWindowTitle(tr("Keyboard Shortcuts"));
+    box.setIcon(QMessageBox::NoIcon);
+    box.setTextFormat(Qt::RichText);
+    box.setText(tr(
+        "<div style='min-width:380px'>"
+        "<b>Cull</b><br>"
+        "Z &mdash; Keep &nbsp;·&nbsp; X &mdash; Reject &nbsp;·&nbsp; U / &#8984;Z &mdash; Undo<br><br>"
+        "<b>Browse</b><br>"
+        "&larr; / &rarr; &mdash; Previous / Next &nbsp;·&nbsp; O &mdash; Open folder &nbsp;·&nbsp; T &mdash; Show/hide timeline<br><br>"
+        "<b>Zoom the photo</b><br>"
+        "Double&#8209;click or 1 &mdash; 100% &nbsp;·&nbsp; 0 &mdash; Fit &nbsp;·&nbsp; + / &minus; &mdash; Zoom<br>"
+        "Pinch or &#8984;&#8209;scroll &mdash; Zoom &nbsp;·&nbsp; Drag &mdash; Pan<br><br>"
+        "<b>Compare</b><br>"
+        "C &mdash; Toggle &nbsp;·&nbsp; &larr; / &rarr; or click &mdash; Pick a pane &nbsp;·&nbsp; Timeline click &mdash; Change its photo<br>"
+        "Z / X &mdash; Cull the active pane &nbsp;·&nbsp; Esc &mdash; Exit<br><br>"
+        "<b>?</b> &mdash; Show this list"
+        "</div>"));
+    box.exec();
+}
+
+int PhotoTriageWindow::activeIndex() const
+{
+    return (m_compareMode && m_activeIsCompare) ? m_compareIndex : m_currentIndex;
+}
+
+void PhotoTriageWindow::setComparePane(bool compareActive)
+{
+    if (!m_compareMode)
+        return;
+    m_activeIsCompare = compareActive;
+    m_imageView->setActive(!compareActive);
+    m_compareView->setActive(compareActive);
+    // Keep keyboard focus on the active pane so the zoom keys (0/1/+/-,
+    // handled in ImageView::keyPressEvent) act on the same photo Z/X does.
+    ImageView *activeView = compareActive ? m_compareView : m_imageView;
+    activeView->setFocus(Qt::OtherFocusReason);
+    // Status filename and timeline highlight follow the active pane.
+    const int idx = activeIndex();
+    if (idx >= 0 && idx < static_cast<int>(m_images.size()))
+        m_statusBar->showMessage(m_images.at(idx).fileName());
+    syncTimelineSelection();
+}
+
+void PhotoTriageWindow::toggleCompare()
+{
+    setCompareMode(!m_compareMode);
+}
+
+// Owns all enter/exit choreography for compare mode, so every path — the C
+// key, the toolbar button, the menu action, culling below two images, and
+// loading a new folder — leaves the UI in one consistent state. While compare
+// mode is on, both indexes are valid and distinct; outside it, m_compareIndex
+// is -1.
+void PhotoTriageWindow::setCompareMode(bool on)
+{
+    if (on && static_cast<int>(m_images.size()) < 2) {
+        // Sticky (untimed) like "Nothing to undo." — a timed message would
+        // clear the bar to blank on expiry instead of restoring the filename.
+        m_statusBar->showMessage(tr("Nothing to compare — need at least two images."));
+        on = false;
+    }
+    if (on != m_compareMode) {
+        m_compareMode = on;
+        if (on) {
+            const int n = static_cast<int>(m_images.size());
+            m_compareIndex = (m_currentIndex + 1 < n) ? m_currentIndex + 1
+                                                      : m_currentIndex - 1;
+            m_compareView->show();
+            if (auto *sp = qobject_cast<QSplitter *>(m_compareView->parentWidget())) {
+                const int w = sp->width();
+                sp->setSizes({ w / 2, w / 2 });
+            }
+            setComparePane(false);   // main pane active by default
+            displayInPane(m_compareView, m_compareIndex);
+        } else {
+            m_compareIndex = -1;
+            m_compareView->hide();
+            m_imageView->setActive(false);
+            m_compareView->setActive(false);
+            m_activeIsCompare = false;
+            m_imageView->setFocus(Qt::OtherFocusReason);
+            // The status filename and timeline highlight may still track the
+            // compare pane; point them back at the main photo. (Skipped when
+            // the caller is mid-fixup with an out-of-range index — it calls
+            // displayCurrentImage() itself afterwards.)
+            if (m_currentIndex >= 0 && m_currentIndex < static_cast<int>(m_images.size())) {
+                m_statusBar->showMessage(m_images.at(m_currentIndex).fileName());
+                syncTimelineSelection();
+            }
+        }
+    }
+    // Sync the toggles even when entry was refused — a click on the checkable
+    // button has already flipped its visual state.
+    if (m_compareButton)
+        m_compareButton->setChecked(m_compareMode);
+    if (m_compareAct)
+        m_compareAct->setChecked(m_compareMode);
 }
 
 void PhotoTriageWindow::undoLastAction()
@@ -793,10 +1398,11 @@ void PhotoTriageWindow::undoLastAction()
         return;
     }
     MoveAction action = m_undoStack.back();
-    m_undoStack.pop_back();
     // Undo the move: if the move has not yet been processed by the
     // background worker, cancel the pending task.  Otherwise move
     // the file back from its destination to the original location.
+    // The undo stack and the kept/rejected tally are only mutated after the
+    // restore succeeds, so a failed rename leaves the session consistent.
     bool originalExists = QFileInfo::exists(action.originalPath);
     if (originalExists) {
         // File is still at original location; cancel the queued move
@@ -814,6 +1420,12 @@ void PhotoTriageWindow::undoLastAction()
             return;
         }
     }
+    m_undoStack.pop_back();
+    // Reverse the kept/rejected tally for this action.
+    if (action.kind == QLatin1String("keep"))
+        m_keptCount = qMax(0, m_keptCount - 1);
+    else
+        m_rejectedCount = qMax(0, m_rejectedCount - 1);
     // Reinsert file into list
     int insertIndex = action.index;
     if (insertIndex < 0) {
@@ -823,8 +1435,15 @@ void PhotoTriageWindow::undoLastAction()
         insertIndex = static_cast<int>(m_images.size());
     }
     m_images.insert(m_images.begin() + insertIndex, QFileInfo(action.originalPath));
-    // Update current index
+    // Shift the compare cursor for the insertion, then show the restored image
+    // in the main pane.
+    if (m_compareMode && m_compareIndex >= insertIndex)
+        ++m_compareIndex;
     m_currentIndex = insertIndex;
+    // The restored photo lands in the main pane — make it the active pane so
+    // the next Z/X acts on what the user just brought back.
+    if (m_compareMode)
+        setComparePane(false);
     // Re-seed the decoded image (if still retained) so the restored photo
     // paints instantly with no synchronous decode. Key by absolute path to
     // match the lookup in displayCurrentImage(). If we no longer hold the
@@ -845,7 +1464,7 @@ void PhotoTriageWindow::undoLastAction()
     if (m_fileListWidget) {
         static QFileIconProvider iconProvider;
         QListWidgetItem *newItem = new QListWidgetItem();
-        newItem->setText(QFileInfo(action.originalPath).fileName());
+        newItem->setText(itemLabel(QFileInfo(action.originalPath)));
         const QString opath = restoredKey;   // absolute path, matches cache keys
         if (m_thumbnailCache.contains(opath)) {
             newItem->setIcon(QIcon(m_thumbnailCache.value(opath)));
@@ -853,10 +1472,9 @@ void PhotoTriageWindow::undoLastAction()
             newItem->setIcon(iconProvider.icon(QFileInfo(opath)));
         }
         m_fileListWidget->insertItem(insertIndex, newItem);
-        // Select the newly restored item
-        m_fileListWidget->blockSignals(true);
-        m_fileListWidget->setCurrentRow(m_currentIndex);
-        m_fileListWidget->blockSignals(false);
+        // Selection and scroll-into-view are handled by displayCurrentImage()
+        // below — pre-setting the row here would make syncTimelineSelection
+        // skip the scroll that reveals the restored photo.
     }
     displayCurrentImage();
     ensurePreloadWindow();
@@ -876,6 +1494,7 @@ void PhotoTriageWindow::undoLastAction()
 // by the Right arrow key.
 void PhotoTriageWindow::goToNextImage()
 {
+    if (m_compareMode) { setComparePane(true); return; }   // → activates the compare pane
     if (m_currentIndex >= 0 && m_currentIndex + 1 < static_cast<int>(m_images.size())) {
         m_currentIndex++;
         displayCurrentImage();
@@ -888,6 +1507,7 @@ void PhotoTriageWindow::goToNextImage()
 // triggered by the Left arrow key.
 void PhotoTriageWindow::goToPreviousImage()
 {
+    if (m_compareMode) { setComparePane(false); return; }   // ← activates the main pane
     if (m_currentIndex > 0) {
         m_currentIndex--;
         displayCurrentImage();
@@ -902,6 +1522,26 @@ void PhotoTriageWindow::onFileListSelectionChanged(int row)
 {
     if (row < 0 || row >= static_cast<int>(m_images.size()))
         return;
+    if (m_compareMode) {
+        // A timeline click loads the photo into the ACTIVE pane. If it is
+        // already in the other pane, activate that pane instead of showing
+        // the same photo twice.
+        const int otherIdx = m_activeIsCompare ? m_currentIndex : m_compareIndex;
+        if (row == otherIdx) {
+            setComparePane(!m_activeIsCompare);
+        } else {
+            if (m_activeIsCompare)
+                m_compareIndex = row;
+            else
+                m_currentIndex = row;
+            // Re-assert focus/status/highlight on the active pane, so the
+            // zoom keys don't stay routed to the timeline list.
+            setComparePane(m_activeIsCompare);
+        }
+        displayCurrentImage();
+        ensurePreloadWindow();
+        return;
+    }
     // Update current index and display the selected image
     m_currentIndex = row;
     displayCurrentImage();
@@ -928,7 +1568,7 @@ void PhotoTriageWindow::populateFileList()
     for (int i = 0; i < count; ++i) {
         const QFileInfo &fi = m_images.at(i);
         QListWidgetItem *item = new QListWidgetItem();
-        item->setText(fi.fileName());
+        item->setText(itemLabel(fi));
         // If a cached thumbnail exists, use it; otherwise use a generic file icon
         const QString path = fi.absoluteFilePath();
         if (m_thumbnailCache.contains(path)) {
