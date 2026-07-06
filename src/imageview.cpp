@@ -114,6 +114,12 @@ void ImageView::setActive(bool on)
     if (m_active == on)
         return;
     m_active = on;
+    // The ring is painted at fixed viewport coordinates, which the default
+    // minimal update mode would smear across the photo when scrolling (it
+    // blits the viewport and repaints only the exposed strips). Repaint the
+    // full viewport while the ring is up; restore the cheaper mode when not.
+    setViewportUpdateMode(on ? QGraphicsView::FullViewportUpdate
+                             : QGraphicsView::MinimalViewportUpdate);
     viewport()->update();   // repaint the active border
 }
 

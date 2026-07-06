@@ -97,8 +97,12 @@ private:
     // Show m_images[idx] in the given pane (cache hit, placeholder, or async
     // full-quality load). Used for both the main and comparison panes.
     void displayInPane(ImageView *view, int idx);
+    // Show a message in a pane and reset its content tracking, so the next
+    // displayInPane never skips the repaint that replaces the message.
+    void showPaneMessage(ImageView *view, const QString &text);
     // Compare mode helpers.
-    void setComparePane(bool compareActive);   // choose & highlight the active pane
+    void setCompareMode(bool on);              // owns all enter/exit choreography
+    void setComparePane(bool compareActive);   // choose, focus & highlight the active pane
     int  activeIndex() const;                  // index the active pane is showing
     void showShortcuts();                      // keyboard-shortcuts help dialog
     // Refresh the status-bar counts label + progress bar from the kept/rejected
@@ -107,12 +111,20 @@ private:
     // Lay the timeline list out as a single-row filmstrip (docked top/bottom)
     // or a wrapping grid (left/right/floating), and sync the position radio.
     void updateTimelineLayout();
+    // Highlight (and scroll to) the active pane's photo in the timeline,
+    // with signals blocked to avoid recursing into onFileListSelectionChanged.
+    void syncTimelineSelection();
+    // Single source of truth for the timeline grid geometry: cell size derives
+    // from the slider value, with extra height when names are shown.
+    void updateThumbGridMetrics();
+    // List caption for an image, per the "Show Image Names" toggle.
+    QString itemLabel(const QFileInfo &fi) const;
     // Apply accent-color or monochrome styling to the Keep/Reject/Undo buttons.
     void applyButtonStyle();
     static bool naturalLess(const QFileInfo &a, const QFileInfo &b);
 
     QPushButton* m_openButton = nullptr;
-    QAction* m_openAct = nullptr; // menu action
+    QAction* m_openAct = nullptr; // File-menu Open action (owns Ctrl+O — always reachable)
     QString m_lastDir; // remember last directory
 
     // Populate the side file browser with the current set of images. This helper
@@ -173,6 +185,14 @@ private:
     bool m_activeIsCompare = false;       // which pane Z/X/arrows act on
     QPushButton *m_compareButton = nullptr;
     QAction *m_compareAct = nullptr;      // Options-menu Compare toggle
+    // What each pane currently displays, so redundant repaints (which would
+    // reset the user's zoom/pan and redo a full-resolution pixmap conversion)
+    // and post-eviction quality downgrades can be skipped.
+    struct PaneContent {
+        QString path;
+        int     quality = -1;   // -1 none/message, 0 thumbnail, 1 fast preview, 2 full
+    };
+    QHash<ImageView*, PaneContent> m_paneShown;
     QStatusBar *m_statusBar;
     QPushButton *m_keepButton;
     QPushButton *m_rejectButton;
@@ -183,14 +203,13 @@ private:
     QProgressBar *m_progressBar = nullptr;
     int m_keptCount = 0;      // images sent to keep/ this session
     int m_rejectedCount = 0;  // images sent to discard/ this session
-    int m_totalCount = 0;     // image count when the folder was opened
+    // (The folder total is derived: kept + rejected + m_images.size().)
 
     // Side panel ("timeline") for browsing available images, hosted in a dock
     // widget so it can be moved to any edge, floated, or hidden.
     QListWidget *m_fileListWidget;
     QDockWidget *m_timelineDock = nullptr;
-    QToolBar *m_toolBar = nullptr;          // bottom button bar (always visible)
-    QWidget *m_actionButtons = nullptr;     // Open/Keep/Reject/Undo group (hide-able)
+    QToolBar *m_toolBar = nullptr;          // bottom button bar ("Show Buttons" hides it)
     QPushButton *m_timelineButton = nullptr; // quick show/hide on the toolbar
     QSlider *m_thumbSlider = nullptr;        // thumbnail-size control in the dock
     QHash<int, QAction*> m_timelinePosActions; // dock area -> position radio
