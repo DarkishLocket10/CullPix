@@ -24,7 +24,7 @@ jobs:
             os: windows-latest
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # ---------------------------- macOS ----------------------------
       - name: Install dependencies (macOS)
@@ -77,7 +77,7 @@ jobs:
 
       # --------------------------- Upload ----------------------------
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.name }}
           if-no-files-found: ignore
@@ -94,15 +94,34 @@ jobs:
     permissions:
       contents: write   # required to create the release + tag
     steps:
+      - name: Check out (full history, for version tags)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Compute next version
+        id: ver
+        # Bump the minor of the highest existing vX.Y.Z tag (e.g. v0.4.0 -> v0.5.0).
+        run: |
+          latest=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1)
+          latest=${latest:-v0.0.0}
+          ver=${latest#v}
+          major=$(echo "$ver" | cut -d. -f1)
+          minor=$(echo "$ver" | cut -d. -f2)
+          next="v${major}.$((minor + 1)).0"
+          echo "Latest tag ${latest} -> next ${next}"
+          echo "version=${next}" >> "$GITHUB_OUTPUT"
+
       - name: Download all build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.0.${{ github.run_number }}
-          name: CullPix v0.0.${{ github.run_number }}
+          tag_name: ${{ steps.ver.outputs.version }}
+          name: CullPix ${{ steps.ver.outputs.version }}
           generate_release_notes: true
           files: artifacts/**/*
